@@ -1,0 +1,50 @@
+name: Diagnose app
+
+on:
+  push:
+    branches: [diag]
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          chmod +x scripts/package.sh
+          scripts/package.sh
+
+      - name: Probe APIs
+        run: |
+          mkdir -p diag
+          curl -sS -m 20 https://api.dexscreener.com/token-profiles/latest/v1 | head -c 3000 > diag/dex_profiles.json || true
+          curl -sS -m 20 "https://api.dexscreener.com/latest/dex/search?q=WETH" | head -c 6000 > diag/dex_search.json || true
+          curl -sS -m 20 "https://api.dexscreener.com/tokens/v1/solana/JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" | head -c 6000 > diag/dex_tokens.json || true
+          curl -sS -m 20 "https://api.gopluslabs.io/api/v1/token_security/1?contract_addresses=0x6982508145454ce325ddbe47a25d4ec3d2311933" | head -c 8000 > diag/goplus_evm.json || true
+          curl -sS -m 20 "https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" | head -c 8000 > diag/goplus_sol.json || true
+
+      - name: Launch app and sample
+        run: |
+          APP="dist/stage/Crypto Scanner.app"
+          "$APP/Contents/MacOS/CryptoScanner" > diag/stdout.txt 2>&1 &
+          PID=$!
+          sleep 40
+          ps -o pid,stat,%cpu,rss,command -p $PID > diag/ps.txt || echo "process exited" > diag/ps.txt
+          sample $PID 5 -file diag/sample.txt || echo "sample failed" > diag/sample.txt
+          screencapture -x diag/screen.png || true
+          log show --last 3m --predicate 'process == "CryptoScanner"' --style compact > diag/log.txt 2>&1 || true
+          kill $PID || true
+
+      - name: Store results
+        run: |
+          git config user.name "diag-bot"
+          git config user.email "diag@example.com"
+          git checkout --orphan diag-results
+          git rm -rf --cached . > /dev/null
+          git add -f diag
+          git commit -m "diag ${{ github.run_number }}"
+          git push -f origin diag-results
