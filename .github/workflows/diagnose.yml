@@ -8,27 +8,63 @@ permissions:
   contents: write
 
 jobs:
-  cors:
+  web:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe CORS
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Screenshots
         run: |
           mkdir -p diag
-          for u in \
-            "https://api.dexscreener.com/token-profiles/latest/v1" \
-            "https://api.dexscreener.com/token-boosts/latest/v1" \
-            "https://api.dexscreener.com/latest/dex/search?q=WETH" \
-            "https://api.dexscreener.com/tokens/v1/solana/JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" \
-            "https://api.dexscreener.com/token-pairs/v1/solana/JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" \
-            "https://api.gopluslabs.io/api/v1/token_security/1?contract_addresses=0x6982508145454ce325ddbe47a25d4ec3d2311933" \
-            "https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" ; do
-            echo "== $u" >> diag/cors.txt
-            curl -sS -m 20 -D - -o /dev/null -H "Origin: https://alinde888.github.io" "$u" | grep -i -E "^HTTP|access-control" >> diag/cors.txt || echo "failed" >> diag/cors.txt
-          done
-          curl -sS -m 20 "https://api.dexscreener.com/token-boosts/latest/v1" | head -c 1500 > diag/boosts.json || true
+          curl -sS -o /dev/null -w "pages %{http_code}\n" https://alinde888.github.io/crypto-scanner/ > diag/pages.txt || true
+          (cd web && python3 -m http.server 8080 > /dev/null 2>&1 &)
+          npm i -s playwright@1.47.2 > /dev/null 2>&1
+          npx -y playwright@1.47.2 install --with-deps chromium > /dev/null 2>&1
+          cat > shot.mjs <<'JS'
+          import { chromium } from "playwright";
+          const b = await chromium.launch();
+          const log = [];
+          async function run(name, opts, steps) {
+            const ctx = await b.newContext(opts);
+            const pg = await ctx.newPage();
+            pg.on("console", (m) => log.push(`[${name}] ${m.type()}: ${m.text()}`));
+            pg.on("pageerror", (e) => log.push(`[${name}] pageerror: ${e.message}`));
+            await pg.goto("http://localhost:8080/");
+            await steps(pg);
+            await ctx.close();
+          }
+          await run("desktop", { viewport: { width: 1440, height: 900 }, colorScheme: "light" }, async (pg) => {
+            await pg.waitForTimeout(45000);
+            await pg.screenshot({ path: "diag/desktop.png" });
+            const chips = await pg.$$eval(".chip", (els) => els.map((e) => e.textContent.trim().replace(/\s+/g, " ")));
+            log.push("chips: " + chips.join(" | "));
+            let row = await pg.$("tbody tr");
+            if (!row) { await pg.click('[data-value="all"]'); for (const id of ["volumeSpike","steadyGrowth","blueChips","dipRebound"]) { await pg.click(`[data-value="${id}"]`); row = await pg.$("tbody tr"); if (row) break; } }
+            if (row) { await row.click(); await pg.waitForTimeout(8000); }
+            await pg.screenshot({ path: "diag/desktop-detail.png" });
+          });
+          await run("dark-check", { viewport: { width: 1280, height: 860 }, colorScheme: "dark" }, async (pg) => {
+            await pg.goto("http://localhost:8080/#check");
+            await pg.fill("#checkAddr", "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN");
+            await pg.click("#checkForm button");
+            await pg.waitForTimeout(10000);
+            await pg.screenshot({ path: "diag/check-dark.png", fullPage: true });
+          });
+          await run("phone", { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: "dark" }, async (pg) => {
+            await pg.waitForTimeout(40000);
+            await pg.screenshot({ path: "diag/phone.png" });
+          });
+          await b.close();
+          (await import("fs")).writeFileSync("diag/console.txt", log.join("\n"));
+          JS
+          node shot.mjs || echo "shot failed" >> diag/console.txt
       - name: Store results
         run: |
           cd diag && git init -q && git checkout -q -b diag-results
           git config user.name "diag-bot" && git config user.email "diag@example.com"
-          mkdir diag && mv *.txt *.json diag/ && git add diag && git commit -q -m "cors ${{ github.run_number }}"
+          mkdir d && mv *.* d/ && mv d diag && git add diag && git commit -q -m "web ${{ github.run_number }}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" diag-results
