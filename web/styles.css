@@ -312,7 +312,8 @@ table.grid { width: 100%; border-collapse: collapse; }
   .app, body.has-inspector .app { grid-template-columns: minmax(0, 1fr); }
   .sidebar { display: none; }
   .main { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
-  .c-chain, .c-24 { display: none; }
+  .c-chain, .c-24, .c-liq, .c-vol, .c-age { display: none; }
+  .grid td, .grid th button { padding-left: 8px; padding-right: 8px; }
   .tok span { max-width: 110px; }
   .inspector {
     position: fixed; inset: 0; z-index: 30; border: 0;

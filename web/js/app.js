@@ -215,7 +215,7 @@ const COLS = [
   ["price", "Цена", "r"],
   ["ch1h", "1 ч", "r"],
   ["ch24h", "24 ч", "r c-24"],
-  ["liq", "Ликвидность", "r"],
+  ["liq", "Ликвидность", "r c-liq"],
   ["vol1h", "Объём 1 ч", "r c-vol"],
   ["age", "Возраст", "r c-age"],
   [null, "Риск", ""],
@@ -282,7 +282,7 @@ const views = {
               <td class="r num">${fmt.price(P.price(p))}</td>
               <td class="r">${change(P.change(p, "h1"))}</td>
               <td class="r c-24">${change(P.change(p, "h24"))}</td>
-              <td class="r num">${fmt.usd(P.liq(p))}</td>
+              <td class="r num c-liq">${fmt.usd(P.liq(p))}</td>
               <td class="r num c-vol">${fmt.usd(P.vol(p, "h1"))}</td>
               <td class="r num c-age">${fmt.age(P.ageHours(p))}</td>
               <td>${riskBadge(p)}</td>
