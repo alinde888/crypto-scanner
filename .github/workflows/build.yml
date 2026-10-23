@@ -29,7 +29,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CryptoScanner-0.1.${{ github.run_number }}
-          path: dist/CryptoScanner.dmg
+          path: |
+            dist/CryptoScanner.zip
+            dist/CryptoScanner.dmg
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -38,6 +40,8 @@ jobs:
           name: Crypto Scanner 0.1.${{ github.run_number }}
           body: |
             Сборка из коммита ${{ github.sha }}.
-            Скачай CryptoScanner.dmg, открой и перетащи Crypto Scanner в «Программы».
-          files: dist/CryptoScanner.dmg
+            Проще всего: скачай CryptoScanner.zip, он распакуется в «Загрузки». Перетащи Crypto Scanner на рабочий стол или в папку «Программы» своей учётной записи и открой оттуда.
+          files: |
+            dist/CryptoScanner.zip
+            dist/CryptoScanner.dmg
           make_latest: true

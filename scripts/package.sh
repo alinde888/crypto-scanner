@@ -36,6 +36,8 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 # Ad-hoc signature (required to run on Apple Silicon)
 codesign --force --deep --sign - "$APP"
 
+ditto -c -k --keepParent "$APP" "dist/CryptoScanner.zip"
+
 ln -s /Applications "dist/stage/Applications"
 hdiutil create -volname "$NAME" -srcfolder dist/stage -ov -format UDZO "dist/CryptoScanner.dmg"
 
