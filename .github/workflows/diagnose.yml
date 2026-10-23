@@ -8,49 +8,27 @@ permissions:
   contents: write
 
 jobs:
-  diagnose:
-    runs-on: macos-15
+  cors:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Build
-        run: |
-          chmod +x scripts/package.sh
-          scripts/package.sh
-
-      - name: Probe APIs
+      - name: Probe CORS
         run: |
           mkdir -p diag
-          curl -sS -m 20 https://api.dexscreener.com/token-profiles/latest/v1 | head -c 3000 > diag/dex_profiles.json || true
-          curl -sS -m 20 "https://api.dexscreener.com/latest/dex/search?q=WETH" | head -c 6000 > diag/dex_search.json || true
-          curl -sS -m 20 "https://api.dexscreener.com/tokens/v1/solana/JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" | head -c 6000 > diag/dex_tokens.json || true
-          curl -sS -m 20 "https://api.gopluslabs.io/api/v1/token_security/1?contract_addresses=0x6982508145454ce325ddbe47a25d4ec3d2311933" | head -c 8000 > diag/goplus_evm.json || true
-          curl -sS -m 20 "https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" | head -c 8000 > diag/goplus_sol.json || true
-
-      - name: Launch like a user (quarantined dmg via Finder)
-        run: |
-          xattr -w com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;" dist/CryptoScanner.dmg
-          hdiutil attach dist/CryptoScanner.dmg -nobrowse -mountpoint /tmp/cs > diag/mount.txt
-          xattr -l "/tmp/cs/Crypto Scanner.app" > diag/xattr.txt 2>&1 || true
-          spctl -a -vv "/tmp/cs/Crypto Scanner.app" > diag/spctl.txt 2>&1 || true
-          open "/tmp/cs/Crypto Scanner.app" > diag/open.txt 2>&1 || true
-          sleep 15
-          screencapture -x diag/screen1.png || true
-          sleep 30
-          screencapture -x diag/screen2.png || true
-          PID=$(pgrep -f "MacOS/CryptoScanner" | head -1 || true)
-          echo "pid=$PID" > diag/ps.txt
-          ps -axo pid,stat,%cpu,rss,command | grep -i -E "crypto|syspolicy|xprotect|CoreServicesUIAgent" >> diag/ps.txt || true
-          if [ -n "$PID" ]; then sample $PID 5 -file diag/sample.txt || true; fi
-          log show --last 3m --predicate 'process == "CryptoScanner" OR process == "syspolicyd" OR process == "CoreServicesUIAgent"' --style compact > diag/log.txt 2>&1 || true
-          kill $PID || true
-
+          for u in \
+            "https://api.dexscreener.com/token-profiles/latest/v1" \
+            "https://api.dexscreener.com/token-boosts/latest/v1" \
+            "https://api.dexscreener.com/latest/dex/search?q=WETH" \
+            "https://api.dexscreener.com/tokens/v1/solana/JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" \
+            "https://api.dexscreener.com/token-pairs/v1/solana/JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" \
+            "https://api.gopluslabs.io/api/v1/token_security/1?contract_addresses=0x6982508145454ce325ddbe47a25d4ec3d2311933" \
+            "https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" ; do
+            echo "== $u" >> diag/cors.txt
+            curl -sS -m 20 -D - -o /dev/null -H "Origin: https://alinde888.github.io" "$u" | grep -i -E "^HTTP|access-control" >> diag/cors.txt || echo "failed" >> diag/cors.txt
+          done
+          curl -sS -m 20 "https://api.dexscreener.com/token-boosts/latest/v1" | head -c 1500 > diag/boosts.json || true
       - name: Store results
         run: |
-          git config user.name "diag-bot"
-          git config user.email "diag@example.com"
-          git checkout --orphan diag-results
-          git rm -rf --cached . > /dev/null
-          git add -f diag
-          git commit -m "diag ${{ github.run_number }}"
-          git push -f origin diag-results
+          cd diag && git init -q && git checkout -q -b diag-results
+          git config user.name "diag-bot" && git config user.email "diag@example.com"
+          mkdir diag && mv *.txt *.json diag/ && git add diag && git commit -q -m "cors ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" diag-results
