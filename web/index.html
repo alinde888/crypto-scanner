@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Crypto Scanner</title>
+  <meta name="description" content="Скринер токенов, скам-проверка контрактов и оценка риска в 10 сетях">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1c1e" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Scanner">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-512.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="icon-192.png" alt="" width="28" height="28">
+        <span>Crypto Scanner</span>
+      </div>
+      <nav id="nav" aria-label="Разделы"></nav>
+      <a href="#settings" id="settingsLink" class="navitem settings-link">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+        <span>Настройки</span>
+      </a>
+    </aside>
+
+    <main class="main">
+      <header class="toolbar">
+        <div class="titles">
+          <h1 id="title">Скринер</h1>
+          <p id="subtitle"></p>
+        </div>
+        <button id="refreshBtn" class="iconbtn large" title="Обновить данные (⌘R)" aria-label="Обновить данные">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+        </button>
+      </header>
+      <div id="view" class="view"></div>
+    </main>
+
+    <aside id="inspector" class="inspector" hidden aria-label="Карточка токена"></aside>
+  </div>
+
+  <nav id="tabbar" class="tabbar" aria-label="Разделы"></nav>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <noscript><p style="padding:24px">Для работы приложения нужен включённый JavaScript.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

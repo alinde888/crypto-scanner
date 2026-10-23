@@ -1,0 +1,26 @@
+name: Publish web app
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push web/ to gh-pages
+        run: |
+          cd web
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -q -m "Publish ${{ github.sha }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" gh-pages
