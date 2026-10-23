@@ -1,0 +1,43 @@
+name: Build macOS app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build app and dmg
+        env:
+          VERSION: 0.1.${{ github.run_number }}
+          BUILD: ${{ github.run_number }}
+        run: |
+          chmod +x scripts/package.sh
+          scripts/package.sh
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: CryptoScanner-0.1.${{ github.run_number }}
+          path: dist/CryptoScanner.dmg
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: Crypto Scanner 0.1.${{ github.run_number }}
+          body: |
+            Сборка из коммита ${{ github.sha }}.
+            Скачай CryptoScanner.dmg, открой и перетащи Crypto Scanner в «Программы».
+          files: dist/CryptoScanner.dmg
+          make_latest: true
