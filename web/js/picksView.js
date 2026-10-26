@@ -124,7 +124,10 @@ export const picksView = {
     if (!k.anthropic) {
       html += `<p class="notice">${icon("key")}<span>Чтобы ИИ сам искал и разбирал токены, добавь ключ Anthropic API в <a href="#settings">Настройках</a>. Ключ хранится только в этом браузере.${!k.helius && !k.etherscan ? " Для поиска сильных кошельков там же добавь ключи Helius и Etherscan." : ""}</span></p>`;
     }
-    if (ai.error) html += `<p class="notice bad">${icon("bad", "bad")}<span>${esc(ai.error)}</span></p>`;
+    if (ai.error) {
+      html += `<p class="notice bad">${icon("bad", "bad")}<span>${esc(ai.error)}</span></p>`;
+      if (ai.lastRaw) html += `<details class="rawbox"><summary>Ответ ИИ для диагностики</summary><pre>${esc(ai.lastRaw)}</pre></details>`;
+    }
     if (smart.error) html += `<p class="notice bad">${icon("bad", "bad")}<span>Поиск кошельков: ${esc(smart.error)}</span></p>`;
     if (smart.notice) html += `<p class="notice">${icon("info")}<span>Поиск кошельков: ${esc(smart.notice)}</span></p>`;
 

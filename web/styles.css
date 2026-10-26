@@ -464,3 +464,6 @@ details.avoid[open] > summary { margin-bottom: 12px; }
   position: fixed; left: 50%; top: 16px; transform: translateX(-50%); z-index: 100; max-width: min(720px, calc(100% - 32px));
   padding: 10px 14px; border-radius: 10px; background: var(--bad); color: #fff; font-weight: 500; box-shadow: var(--shadow);
 }
+
+.rawbox summary { cursor: pointer; color: var(--fg-2); font-size: 12px; }
+.rawbox pre { white-space: pre-wrap; word-break: break-all; font: 11px var(--mono); background: var(--bg-elev); padding: 10px; border-radius: 8px; max-height: 260px; overflow: auto; user-select: all; }

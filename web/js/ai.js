@@ -13,7 +13,9 @@ export const MODELS = [
   { id: "claude-sonnet-5-5", title: "Claude Sonnet 5.5: глубже анализ" },
   { id: "claude-opus-5-5", title: "Claude Opus 5.5: максимум качества, дороже всего" },
 ];
-const BATCH = 8;
+const BATCH = 6;
+// Bump when the analysis rules change: older verdicts are dropped and re-analysed.
+const PROMPT_V = 3;
 const TTL = { candidate: 45 * 60e3, watch: 45 * 60e3, avoid: 3 * 3600e3 };
 
 function load() {
@@ -87,6 +89,34 @@ function toList(v) {
 }
 const toInt = (v, d = 0) => { const n = Math.round(Number(v)); return isFinite(n) ? Math.max(0, Math.min(100, n)) : d; };
 const toText = (v) => (v == null ? "" : String(v));
+
+// Finds the list of analyses wherever the model put it.
+function extractAnalyses(body) {
+  const parse = (v) => {
+    if (typeof v === "string") { try { return parse(JSON.parse(v)); } catch { return null; } }
+    if (Array.isArray(v)) return v;
+    if (v && typeof v === "object") {
+      for (const k of ["analyses", "analysis", "tokens", "results", "items"]) {
+        const r = parse(v[k]);
+        if (r) return r;
+      }
+      if (v.id && v.verdict) return [v];
+      const vals = Object.values(v);
+      if (vals.length && vals.every((x) => x && typeof x === "object" && x.verdict)) return vals;
+    }
+    return null;
+  };
+  for (const c of body?.content || []) {
+    if (c.type === "tool_use") { const r = parse(c.input); if (r?.length) return r; }
+  }
+  for (const c of body?.content || []) {
+    if (c.type === "text" && c.text) {
+      const m = c.text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
+      if (m) { const r = parse(m[0]); if (r?.length) return r; }
+    }
+  }
+  return [];
+}
 
 export function normalize(a) {
   const v0 = String(a?.verdict || "").toLowerCase(), r0 = String(a?.risk || "").toLowerCase();
@@ -209,7 +239,7 @@ export const ai = {
   },
 
   results() {
-    return Object.values(this.state.results).filter((r) => r && r.pair && r.pair.baseToken).map(normalize);
+    return Object.values(this.state.results).filter((r) => r && r.v === PROMPT_V && r.pair && r.pair.baseToken).map(normalize);
   },
 
   pending(profile) {
@@ -220,6 +250,7 @@ export const ai = {
       if (!passesGates(p, smartBuys)) return false;
       if (store.security.get(P.key(p))?.verdict === "danger") return false;
       const prev = this.state.results[P.key(p)];
+      if (prev && prev.v !== PROMPT_V) return true;
       if (prev && now - prev.at < (TTL[prev.verdict] || TTL.watch)) return false;
       return true;
     });
@@ -237,7 +268,7 @@ export const ai = {
     if (!key) { if (manual) { this.error = "Добавь ключ Anthropic API в Настройках."; this.save(); } return; }
     if (!cfg.enabled && !manual) return;
     if (this.callsLeft() <= 0) { this.error = `Дневной лимит анализов (${cfg.dailyCalls}) исчерпан. Его можно поднять в настройках.`; this.save(); return; }
-    const list = this.pending(cfg.profile).slice(0, BATCH);
+    const list = this.pending(cfg.profile).slice(0, this.batch || BATCH);
     this.lastPending = list.length;
     if (!list.length) { this.status = "Новых токенов, прошедших фильтр, пока нет. Проверю после следующего обновления рынка."; this.save(); return; }
 
@@ -268,7 +299,7 @@ export const ai = {
         },
         body: JSON.stringify({
           model: cfg.model,
-          max_tokens: 6000,
+          max_tokens: 8000,
           system: SYSTEM,
           tools: [TOOL],
           tool_choice: { type: "tool", name: "report" },
@@ -291,17 +322,24 @@ export const ai = {
       this.state.totalIn += u.input_tokens || 0;
       this.state.totalOut += u.output_tokens || 0;
 
-      let out = body.content?.find((c) => c.type === "tool_use")?.input?.analyses || [];
-      if (typeof out === "string") { try { out = JSON.parse(out); } catch { out = []; } }
-      if (!Array.isArray(out)) out = [];
+      this.lastRaw = JSON.stringify({ stop_reason: body.stop_reason, content: body.content }).slice(0, 6000);
+      let out = extractAnalyses(body);
       out = out.filter((a) => a && typeof a === "object").map(normalize);
-      if (!out.length) throw new Error("ИИ вернул ответ в неожиданном формате. Повторю при следующем анализе.");
+      if (!out.length) {
+        if (body.stop_reason === "max_tokens") {
+          this.batch = Math.max(3, (this.batch || BATCH) - 2);
+          throw new Error("Ответ ИИ обрезался по длине. Следующий анализ возьмёт меньше токенов за раз.");
+        }
+        throw new Error("ИИ вернул ответ в неожиданном формате. Повторю при следующем анализе.");
+      }
+      this.lastRaw = null;
       const byId = new Map(clean.map((p) => [P.key(p), p]));
       for (const a of out) {
         const p = byId.get(a.id);
         if (!p) continue;
         this.state.results[a.id] = {
           ...a,
+          v: PROMPT_V,
           at: Date.now(),
           model: cfg.model,
           pair: p,
