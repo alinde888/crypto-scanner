@@ -459,3 +459,8 @@ details.avoid[open] > summary { margin-bottom: 12px; }
 .rejected li { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; background: var(--bg-elev); cursor: pointer; min-width: 0; }
 .rejected li > span.muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
 .sect .dot { width: 9px; height: 9px; align-self: center; }
+
+.fatal {
+  position: fixed; left: 50%; top: 16px; transform: translateX(-50%); z-index: 100; max-width: min(720px, calc(100% - 32px));
+  padding: 10px 14px; border-radius: 10px; background: var(--bad); color: #fff; font-weight: 500; box-shadow: var(--shadow);
+}
