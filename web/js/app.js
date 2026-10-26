@@ -500,7 +500,12 @@ function render() {
   $("#refreshBtn").hidden = r !== "screener";
   $("#refreshBtn").classList.toggle("spinning", store.loading);
   $("#refreshBtn").disabled = store.loading;
-  views[r].update(view);
+  try {
+    views[r].update(view);
+  } catch (e) {
+    console.error(e);
+    view.innerHTML = `<p class="notice bad">${icon("bad", "bad")}<span>Ошибка отображения: ${esc(e.message)}. Пришли скриншот этого сообщения, чтобы я исправил.</span></p>`;
+  }
   renderDetailPanel();
 }
 

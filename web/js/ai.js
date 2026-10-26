@@ -75,6 +75,37 @@ const TOOL = {
   },
 };
 
+// Models sometimes return arrays as JSON strings, omit fields or use
+// unexpected values. Everything shown on the page goes through this.
+function toList(v) {
+  if (Array.isArray(v)) return v.map((x) => String(x ?? "")).filter(Boolean);
+  if (typeof v === "string" && v.trim()) {
+    try { const j = JSON.parse(v); if (Array.isArray(j)) return toList(j); } catch { /* plain text */ }
+    return v.split(/\n|;\s*/).map((x) => x.replace(/^[-•*\s]+/, "").trim()).filter(Boolean);
+  }
+  return [];
+}
+const toInt = (v, d = 0) => { const n = Math.round(Number(v)); return isFinite(n) ? Math.max(0, Math.min(100, n)) : d; };
+const toText = (v) => (v == null ? "" : String(v));
+
+export function normalize(a) {
+  const v0 = String(a?.verdict || "").toLowerCase(), r0 = String(a?.risk || "").toLowerCase();
+  const verdict = ["candidate", "watch", "avoid"].includes(v0) ? v0 : "watch";
+  const risk = ["high", "medium", "low"].includes(r0) ? r0 : "high";
+  return {
+    ...a,
+    verdict, risk,
+    score: toInt(a?.score, null),
+    confidence: toInt(a?.confidence, 0),
+    headline: toText(a?.headline) || toText(a?.thesis).slice(0, 90),
+    thesis: toText(a?.thesis),
+    positives: toList(a?.positives),
+    risks: toList(a?.risks),
+    timing: toText(a?.timing),
+    invalidation: toText(a?.invalidation),
+  };
+}
+
 const r1 = (v) => (v == null || !isFinite(v) ? null : Math.round(v * 10) / 10);
 
 function describe(p, smartBuys) {
@@ -176,7 +207,7 @@ export const ai = {
   },
 
   results() {
-    return Object.values(this.state.results);
+    return Object.values(this.state.results).filter((r) => r && r.pair && r.pair.baseToken).map(normalize);
   },
 
   pending(profile) {
@@ -258,7 +289,11 @@ export const ai = {
       this.state.totalIn += u.input_tokens || 0;
       this.state.totalOut += u.output_tokens || 0;
 
-      const out = body.content?.find((c) => c.type === "tool_use")?.input?.analyses || [];
+      let out = body.content?.find((c) => c.type === "tool_use")?.input?.analyses || [];
+      if (typeof out === "string") { try { out = JSON.parse(out); } catch { out = []; } }
+      if (!Array.isArray(out)) out = [];
+      out = out.filter((a) => a && typeof a === "object").map(normalize);
+      if (!out.length) throw new Error("ИИ вернул ответ в неожиданном формате. Повторю при следующем анализе.");
       const byId = new Map(clean.map((p) => [P.key(p), p]));
       for (const a of out) {
         const p = byId.get(a.id);
