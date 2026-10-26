@@ -160,8 +160,10 @@ function preScore(p, profile, smartBuys) {
   const strategies = STRATEGIES.filter((s) => profile === "all" || s.risk === profile);
   const matched = strategies.filter((s) => s.match(p)).length;
   const sb = smartBuys.get(`${p.chainId}:${p.baseToken.address.toLowerCase()}`);
-  if (!matched && !sb) return -Infinity;
+  // Strategy matches and smart-wallet buys weigh most, but healthy momentum
+  // alone can also put a token in front of the AI.
   let s = matched * 2 + (sb ? 4 + Math.min(sb.buys.length, 4) * 2 : 0);
+  if ((P.change(p, "h1") ?? 0) > 0 && (P.change(p, "m5") ?? 0) >= 0) s += 1;
   const b = P.buys(p, "h1"), sl = P.sells(p, "h1");
   if (b + sl > 20 && b / (b + sl) > 0.58) s += 2;
   const v1 = P.vol(p, "h1"), v6 = P.vol(p, "h6");
