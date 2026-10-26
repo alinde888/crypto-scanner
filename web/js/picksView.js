@@ -88,7 +88,7 @@ function card(r) {
 export const picksView = {
   title: "Подборка",
   subtitle: () => {
-    const n = ai.results().filter((r) => r.verdict === "candidate").length;
+    const n = ai.results().filter((r) => r.verdict === "candidate" && r.confidence >= MIN_CONFIDENCE && Date.now() - r.at < CANDIDATE_TTL && !stale(r)).length;
     return ai.lastRun ? `Кандидатов: ${n} · последний анализ в ${fmt.time(ai.lastRun)}` : "Готовые идеи: рынок, сильные кошельки и анализ ИИ";
   },
   mount(el) {
