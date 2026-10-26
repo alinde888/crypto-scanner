@@ -4,7 +4,7 @@
 
 import { P, chainById } from "./engine.js";
 import { store } from "./store.js";
-import { WALLET_CHAINS, keys, analyzeWallet, findBuyers, watchlist, feed, startOfDay, RateLimitError } from "./wallets.js";
+import { WALLET_CHAINS, keys, analyzeWallet, findBuyers, watchlist, feed, startOfDay, RateLimitError, gradeWallet } from "./wallets.js";
 
 const LS = "cryptoScanner.smart.v1";
 const BUDGET = { solana: 6, evm: 24 };          // token scans per day
@@ -46,6 +46,8 @@ export const smart = {
 
   // Tokens that already made a strong move: their early buyers are the
   // people worth studying.
+  // Solana memecoins move far more than EVM tokens, so EVM chains get a
+  // lower bar to keep every supported chain in the rotation.
   winners() {
     const k = keys.get();
     return store.pairs.filter((p) => {
@@ -55,23 +57,43 @@ export const smart = {
       if (store.security.get(P.key(p))?.verdict === "danger") return false;
       const age = P.ageHours(p);
       const ch24 = P.change(p, "h24") ?? 0, ch6 = P.change(p, "h6") ?? 0;
-      return P.liq(p) >= 30000 && age != null && age <= 24 * 7 && (ch24 >= 100 || ch6 >= 60);
+      const sol = c.kind === "solana";
+      const minLiq = sol ? 30000 : 20000;
+      const maxAge = sol ? 24 * 7 : 24 * 30;
+      const moved = sol ? (ch24 >= 100 || ch6 >= 60) : (ch24 >= 40 || ch6 >= 25);
+      return P.liq(p) >= minLiq && age != null && age <= maxAge && moved;
     }).sort((a, b) => (P.change(b, "h24") ?? 0) - (P.change(a, "h24") ?? 0));
   },
 
+  // Rotates through chains: the chain scanned longest ago goes next.
+  nextPick() {
+    const last = this.state.lastChain || {};
+    const byChain = new Map();
+    for (const p of this.winners()) {
+      const kind = WALLET_CHAINS[p.chainId].kind === "solana" ? "solana" : "evm";
+      if (this.budgetLeft(kind) <= 0) continue;
+      if (!byChain.has(p.chainId)) byChain.set(p.chainId, p);
+    }
+    const chains = [...byChain.keys()].sort((a, b) => (last[a] || 0) - (last[b] || 0));
+    return chains.length ? byChain.get(chains[0]) : null;
+  },
+
+  // Grades are recomputed with the current rules so older entries follow them too.
   list() {
     const rank = { strong: 0, medium: 1, weak: 2 };
     return Object.values(this.state.wallets)
       .filter((w) => !w.error)
-      .sort((a, b) => (rank[a.grade] - rank[b.grade]) || (b.hits.length - a.hits.length) || (b.pnl - a.pnl));
+      .map((w) => ({ ...w, grade: gradeWallet(w) }))
+      .sort((a, b) => (rank[a.grade] - rank[b.grade]) || (b.pnl - a.pnl) || (b.hits.length - a.hits.length));
   },
 
   smartList() {
-    return this.list().filter((w) => !w.isBot && (w.grade === "strong" || (w.hits.length >= 2 && w.pnl > 0)));
+    return this.list().filter((w) => w.grade === "strong");
   },
 
   get(chain, wallet) {
-    return this.state.wallets[`${chain}:${wallet.toLowerCase()}`];
+    const w = this.state.wallets[`${chain}:${wallet.toLowerCase()}`];
+    return w ? { ...w, grade: gradeWallet(w) } : w;
   },
 
   async scanToken(p) {
@@ -99,7 +121,7 @@ export const smart = {
         const a = await analyzeWallet(p.chainId, b.wallet);
         this.state.wallets[id] = {
           chain: p.chainId, wallet: b.wallet, grade: a.grade, winRate: a.winRate, wins: a.wins, tokens: a.tokens,
-          pnl: a.pnl, roi: a.roi, isBot: a.isBot, medianHold: a.medianHold, flags: a.flags,
+          pnl: a.pnl, roi: a.roi, topShare: a.topShare, isBot: a.isBot, medianHold: a.medianHold, flags: a.flags,
           hits: [...(cur?.hits || []).filter((h) => h.token !== key), hit], analyzedAt: Date.now(),
         };
       } catch (e) {
@@ -139,8 +161,9 @@ export const smart = {
     this.notice = null;
     const k = keys.get();
     if (!k.etherscan && !k.helius) return;
-    const pick = this.winners().find((p) => this.budgetLeft(WALLET_CHAINS[p.chainId].kind === "solana" ? "solana" : "evm") > 0);
+    const pick = this.nextPick();
     if (!pick) return;
+    this.state.lastChain = { ...(this.state.lastChain || {}), [pick.chainId]: Date.now() };
     this.running = true;
     this.error = null;
     try {
@@ -165,6 +188,7 @@ export const smart = {
   },
 
   start() {
+    this.syncFollow();
     clearInterval(this.timer);
     this.timer = setInterval(() => this.tick(), 4 * 60e3);
     setTimeout(() => this.tick(), 20e3);

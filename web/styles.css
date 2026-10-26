@@ -454,3 +454,4 @@ details.avoid[open] > summary { margin-bottom: 12px; }
   .tabbar a.on { color: var(--accent); }
   .toast { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
 }
+.lbfilters { gap: 10px; margin-top: 6px; align-items: center; }

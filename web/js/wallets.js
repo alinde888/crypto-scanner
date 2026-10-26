@@ -338,12 +338,26 @@ async function loadHistory(chain, wallet, depth = 1000) {
   return { groups: evmGroups(chain, wallet, tokenTx, normalTx, internalTx), swaps: tokenTx.length, normalCount: normalTx.length };
 }
 
+// ---------- grading ----------
+// "strong": proven history: at least 8 traded tokens, profitable overall,
+//   wins more often than not, and profit is not carried by one lucky trade.
+// "medium" (promising): same direction, but shorter history or weaker edge.
+// "weak": everything else, including all losing wallets.
+export const MIN_TOKENS = { strong: 8, medium: 5 };
+
+export function gradeWallet({ isBot, tokens, winRate, pnl, roi, topShare = 0 }) {
+  if (isBot || !(pnl > 0)) return "weak";
+  if (tokens >= MIN_TOKENS.strong && winRate >= 0.55 && roi >= 0.1 && topShare <= 0.6) return "strong";
+  if (tokens >= MIN_TOKENS.medium && winRate >= 0.45 && roi > 0 && topShare <= 0.8) return "medium";
+  return "weak";
+}
+
 // ---------- analysis ----------
 
 export async function analyzeWallet(chain, wallet, { depth } = {}) {
   const c = WALLET_CHAINS[chain];
   if (!c) throw new Error(UNSUPPORTED_WALLET_CHAINS[chain] || "Сеть не поддерживается.");
-  const hist = await loadHistory(chain, wallet, depth || (c.kind === "solana" ? 300 : 1000));
+  const hist = await loadHistory(chain, wallet, depth || (c.kind === "solana" ? 500 : 1000));
   const qUsd = await nativeUsd(chain);
   const trades = buildTrades(hist.groups, qUsd);
 
@@ -362,7 +376,7 @@ export async function analyzeWallet(chain, wallet, { depth } = {}) {
   }
 
   // Only positions opened inside the loaded window count.
-  const positions = [...byToken.values()].filter((p) => p.buys > 0 && p.cost >= 5);
+  const positions = [...byToken.values()].filter((p) => p.buys > 0 && p.cost >= 20);
   const prices = await tokenPrices(chain, positions.map((p) => p.token));
   for (const p of positions) {
     const pr = prices.get(p.token.toLowerCase());
@@ -388,19 +402,18 @@ export async function analyzeWallet(chain, wallet, { depth } = {}) {
   const flags = [];
   if (tradesPerDay > 60) flags.push("Похоже на бота: больше 60 сделок в день");
   if (medianHold != null && medianHold < 60000 && holds.length >= 5) flags.push("Похоже на бота: держит позиции меньше минуты");
-  if (positions.length < 5) flags.push("Мало сделок для надёжной статистики");
+  if (positions.length < MIN_TOKENS.strong) flags.push(`Мало сделок для надёжной статистики: ${positions.length} токенов, нужно от ${MIN_TOKENS.strong}`);
   const topShare = pnl > 0 && positions.length ? Math.max(0, positions[0].pnl) / pnl : 0;
-  if (positions.length >= 5 && topShare > 0.8) flags.push("Почти вся прибыль из одной сделки");
+  if (positions.length >= 3 && topShare > 0.6) flags.push(`Больше ${Math.round(topShare * 100) >= 100 ? "всей" : Math.round(topShare * 100) + "%"} прибыли из одной сделки`);
 
   const winRate = positions.length ? wins / positions.length : 0;
   const isBot = flags.some((f) => f.startsWith("Похоже на бота"));
-  let grade = "weak";
-  if (!isBot && positions.length >= 5 && winRate >= 0.55 && pnl > 0 && topShare <= 0.8) grade = "strong";
-  else if (!isBot && positions.length >= 3 && pnl > 0) grade = "medium";
+  const roi = cost ? pnl / cost : 0;
+  const grade = gradeWallet({ isBot, tokens: positions.length, winRate, pnl, roi, topShare });
 
   return {
     chain, wallet, positions, trades: trades.length, tokens: positions.length, wins, winRate, cost, pnl,
-    roi: cost ? pnl / cost : 0, medianHold, tradesPerDay, flags, isBot, grade,
+    roi, topShare, medianHold, tradesPerDay, flags, isBot, grade,
     since: trades.length ? trades[0].ts : null, analyzedAt: Date.now(),
   };
 }
