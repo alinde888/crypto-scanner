@@ -532,3 +532,8 @@ export function holdText(ms) {
   return `${Math.round(h / 24)} дн`;
 }
 export const _internals = { buildTrades, evmGroups, solanaGroups };
+
+export function startOfDay() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}

@@ -72,3 +72,53 @@ export async function goplusSecurity(chain, address) {
   const key = Object.keys(result).find((k) => k.toLowerCase() === address.toLowerCase());
   return result[key ?? Object.keys(result)[0]];
 }
+
+// ---------- GeckoTerminal (public API, ~30 calls/min) ----------
+
+const GT = "https://api.geckoterminal.com/api/v2";
+const gtPacer = new Pacer(2200);
+const num = (v) => (v == null || v === "" ? null : Number(v));
+
+// Converts a GeckoTerminal pool into the DexScreener pair shape used everywhere.
+function gtToPair(pool, tokens, chainId) {
+  const a = pool.attributes || {};
+  const baseId = pool.relationships?.base_token?.data?.id || "";
+  const quoteId = pool.relationships?.quote_token?.data?.id || "";
+  const t = tokens.get(baseId) || {};
+  const baseAddr = t.address || baseId.slice(baseId.indexOf("_") + 1);
+  const [baseSym, quoteSym] = String(a.name || "").split(" / ");
+  const tx = a.transactions || {};
+  const vol = a.volume_usd || {};
+  const ch = a.price_change_percentage || {};
+  const w = (o, k) => (o[k] == null ? undefined : num(o[k]));
+  const txn = (k) => (tx[k] ? { buys: tx[k].buys ?? 0, sells: tx[k].sells ?? 0, buyers: tx[k].buyers, sellers: tx[k].sellers } : undefined);
+  return {
+    chainId,
+    dexId: pool.relationships?.dex?.data?.id || null,
+    url: `https://dexscreener.com/${chainId}/${a.address}`,
+    pairAddress: a.address,
+    baseToken: { address: baseAddr, name: t.name || baseSym, symbol: t.symbol || baseSym },
+    quoteToken: { address: quoteId.slice(quoteId.indexOf("_") + 1), symbol: (quoteSym || "").trim() },
+    priceUsd: a.base_token_price_usd,
+    txns: { m5: txn("m5"), h1: txn("h1"), h6: txn("h6"), h24: txn("h24") },
+    volume: { m5: w(vol, "m5"), h1: w(vol, "h1"), h6: w(vol, "h6"), h24: w(vol, "h24") },
+    priceChange: { m5: w(ch, "m5"), h1: w(ch, "h1"), h6: w(ch, "h6"), h24: w(ch, "h24") },
+    liquidity: { usd: num(a.reserve_in_usd) || 0 },
+    fdv: num(a.fdv_usd),
+    marketCap: num(a.market_cap_usd),
+    pairCreatedAt: a.pool_created_at ? Date.parse(a.pool_created_at) : 0,
+    info: t.image_url && /^https:/.test(t.image_url) ? { imageUrl: t.image_url } : undefined,
+    source: "gt",
+  };
+}
+
+export const gecko = {
+  async pools(chain, kind) {
+    await gtPacer.wait();
+    const path = kind === "new" ? "new_pools" : "trending_pools";
+    const r = await getJSON(`${GT}/networks/${chain.gt}/${path}?include=base_token&page=1`);
+    const tokens = new Map();
+    for (const inc of r?.included || []) if (inc.type === "token") tokens.set(inc.id, inc.attributes || {});
+    return (r?.data || []).map((p) => gtToPair(p, tokens, chain.id)).filter((p) => p.pairAddress && p.baseToken.address);
+  },
+};

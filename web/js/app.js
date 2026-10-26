@@ -4,6 +4,9 @@ import { store } from "./store.js";
 import { $, esc, safeUrl, icon, toast, copyText, chainBadge, change, tokenIcon, empty } from "./ui.js";
 import { walletViews, startTokenScan, startPolling } from "./walletViews.js";
 import { WALLET_CHAINS, keys } from "./wallets.js";
+import { picksView } from "./picksView.js";
+import { ai, MODELS } from "./ai.js";
+import { smart } from "./smartmoney.js";
 
 // ---------- helpers ----------
 
@@ -281,6 +284,7 @@ const views = {
     subtitle: () => "Скам-проверка и риск по адресу контракта",
   },
 
+  picks: picksView,
   ...walletViews,
 
   rules: {
@@ -327,15 +331,35 @@ const views = {
       el.innerHTML = `
         <div class="form">
           <a class="group linkrow" href="#rules">${icon("rules")}<span>Мои правила: стопы, тейки, размер позиции</span><span class="muted">›</span></a>
+          <a class="group linkrow" href="#check">${icon("check")}<span>Проверка токена по адресу</span><span class="muted">›</span></a>
           <section class="group"><h3>API-ключи</h3>
+            <label class="field"><span>Anthropic API<small>ИИ-аналитик</small></span>
+              <input id="keyAnthropic" type="password" autocomplete="off" spellcheck="false" value="${esc(keys.get().anthropic || "")}" placeholder="sk-ant-…"></label>
             <label class="field"><span>Etherscan<small>Ethereum, Arbitrum, Polygon, Sonic, HyperEVM</small></span>
               <input id="keyEtherscan" type="password" autocomplete="off" spellcheck="false" value="${esc(keys.get().etherscan || "")}" placeholder="Вставь ключ"></label>
             <label class="field"><span>Helius<small>Solana</small></span>
               <input id="keyHelius" type="password" autocomplete="off" spellcheck="false" value="${esc(keys.get().helius || "")}" placeholder="Вставь ключ"></label>
             <div class="row wrap"><button class="btn primary" data-action="save-keys">Сохранить ключи</button>
               <a class="btn" href="https://etherscan.io/apidashboard" target="_blank" rel="noopener">${icon("external")}Ключ Etherscan</a>
-              <a class="btn" href="https://dashboard.helius.dev" target="_blank" rel="noopener">${icon("external")}Ключ Helius</a></div>
-            <p class="fine">Ключи нужны для разделов «Сильные кошельки» и «Копи-трейдинг». Они хранятся только в этом браузере и отправляются только в Etherscan и Helius. Не сохраняй их на чужом или общем компьютере.</p>
+              <a class="btn" href="https://dashboard.helius.dev" target="_blank" rel="noopener">${icon("external")}Ключ Helius</a>
+              <a class="btn" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">${icon("external")}Ключ Anthropic</a></div>
+            <p class="fine">Ключи хранятся только в этом браузере и отправляются только в свои сервисы: Anthropic, Etherscan и Helius. Не сохраняй их на чужом или общем компьютере. Использование API Anthropic оплачивается отдельно в console.anthropic.com.</p>
+          </section>
+          <section class="group"><h3>ИИ-аналитик</h3>
+            <label class="toggle"><span>Автоматический анализ после каждого обновления рынка</span>
+              <input type="checkbox" role="switch" data-setting="aiEnabled" ${s.aiEnabled !== false ? "checked" : ""}></label>
+            <label class="field"><span>Модель</span>
+              <select data-setting="aiModel">${MODELS.map((m) => `<option value="${m.id}" ${(s.aiModel || MODELS[0].id) === m.id ? "selected" : ""}>${m.title}</option>`).join("")}</select></label>
+            <label class="field"><span>Лимит анализов в день<small>один анализ разбирает до 8 токенов</small></span>
+              <select data-setting="aiDailyCalls">${[10, 20, 40, 80, 150].map((v) => `<option value="${v}" ${(s.aiDailyCalls ?? 40) === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+            <p class="fine">Расход токенов виден на странице «Подборка». Сверь его с ценами модели в console.anthropic.com, чтобы понимать стоимость. Если ИИ выключен, подборка показывает кандидатов по стратегиям без анализа.</p>
+          </section>
+          <section class="group"><h3>Сильные кошельки</h3>
+            <label class="toggle"><span>Автоматически искать сильные кошельки</span>
+              <input type="checkbox" role="switch" data-setting="smartAuto" ${s.smartAuto !== false ? "checked" : ""}></label>
+            <label class="field"><span>Автоматически следить за лучшими</span>
+              <select data-setting="smartFollow">${[0, 5, 10, 20].map((v) => `<option value="${v}" ${(s.smartFollow ?? 10) === v ? "selected" : ""}>${v ? `Топ-${v}` : "Не следить"}</option>`).join("")}</select></label>
+            <p class="fine">Поиск берёт токены, которые выросли больше чем на 100% за сутки, находит их ранних покупателей и считает им винрейт. Лимит: 6 токенов в день на Solana и 24 в EVM-сетях, чтобы не выйти за бесплатные тарифы. Покупки отслеживаемых кошельков попадают в копи-трейдинг и учитываются ИИ.</p>
           </section>
           <section class="group"><h3>Сети</h3>
             ${CHAINS.map((c) => `<label class="toggle"><span>${c.name} ${chainBadge(c.id)}</span>
@@ -367,14 +391,17 @@ const views = {
           const set = new Set(s.chains);
           i.checked ? set.add(i.value) : set.delete(i.value);
           s.chains = CHAINS.map((c) => c.id).filter((id) => set.has(id));
-        } else if (k === "hideDangerous" || k === "skipFading") {
+        } else if (["hideDangerous", "skipFading", "aiEnabled", "smartAuto"].includes(k)) {
           s[k] = i.checked;
+        } else if (k === "aiModel") {
+          s[k] = i.value;
         } else {
           s[k] = Number(i.value);
         }
         store.saveSettings();
         if (k === "autoRefreshMin") store.scheduleAutoRefresh();
         if (k === "chain") store.refresh();
+        if (k === "smartFollow") smart.syncFollow();
         toast("Сохранено");
       });
     },
@@ -414,17 +441,18 @@ async function runCheck() {
 // ---------- shell ----------
 
 const NAV = [
+  ["Главное", [["picks", "Подборка"]]],
   ["Рынок", [["screener", "Скринер"], ["check", "Проверка токена"]]],
   ["Кошельки", [["wallets", "Сильные кошельки"], ["copy", "Копи-трейдинг"]]],
   ["Торговля", [["rules", "Мои правила"]]],
 ];
-const TAB_ICON = { screener: "screener", check: "check", wallets: "wallets", copy: "copy", rules: "rules", settings: "settings" };
+const TAB_ICON = { picks: "sparkle", screener: "screener", check: "check", wallets: "wallets", copy: "copy", rules: "rules", settings: "settings" };
 
 let route = null;
 
 function currentRoute() {
   const h = location.hash.replace("#", "");
-  return views[h] ? h : "screener";
+  return views[h] ? h : "picks";
 }
 
 function renderNav() {
@@ -433,19 +461,19 @@ function renderNav() {
     <div class="navsec"><h4>${sec}</h4>${items.map(([id, t, badge]) => `
       <a href="#${id}" class="navitem ${r === id ? "on" : ""}">${icon(TAB_ICON[id])}<span>${t}</span>${badge ? `<em>${badge}</em>` : ""}</a>`).join("")}</div>`).join("");
   $("#settingsLink").classList.toggle("on", r === "settings");
-  const tabs = [["screener", "Скринер"], ["check", "Проверка"], ["wallets", "Кошельки"], ["copy", "Копи"], ["settings", "Ещё"]];
+  const tabs = [["picks", "Подборка"], ["screener", "Скринер"], ["wallets", "Кошельки"], ["copy", "Копи"], ["settings", "Ещё"]];
   $("#tabbar").innerHTML = tabs.map(([id, t]) => `
     <a href="#${id}" class="${r === id ? "on" : ""}">${icon(TAB_ICON[id])}<span>${t}</span></a>`).join("");
 }
 
 function renderDetailPanel() {
   const panel = $("#inspector");
-  if (currentRoute() !== "screener" || !ui.selected) {
+  if (!["screener", "picks"].includes(currentRoute()) || !ui.selected) {
     panel.hidden = true;
     document.body.classList.remove("has-inspector");
     return;
   }
-  const p = store.pairs.find((x) => P.id(x) === ui.selected);
+  const p = store.pairs.find((x) => P.id(x) === ui.selected) || ai.results().map((r) => r.pair).find((x) => P.id(x) === ui.selected);
   if (!p) { panel.hidden = true; document.body.classList.remove("has-inspector"); return; }
   const scroll = panel.scrollTop;
   const sameToken = panel.firstElementChild?.dataset.key === P.key(p);
@@ -492,13 +520,22 @@ document.addEventListener("click", (e) => {
     case "close-detail": ui.selected = null; render(); break;
     case "refresh": store.refresh(); break;
     case "copy": copyText(v); break;
+    case "profile": store.settings.riskProfile = v; store.saveSettings(); break;
+    case "ai-run": ai.run({ manual: true }); break;
+    case "pick-open": {
+      const p = store.pairs.find((x) => P.key(x) === v) || ai.state.results[v]?.pair;
+      if (p) { ui.selected = P.id(p); render(); }
+      break;
+    }
     case "find-buyers":
       ui.selected = null;
       location.hash = "#wallets";
       startTokenScan(a.dataset.chain, v);
       break;
     case "save-keys":
-      keys.set({ etherscan: $("#keyEtherscan").value.trim(), helius: $("#keyHelius").value.trim() });
+      keys.set({ anthropic: $("#keyAnthropic").value.trim(), etherscan: $("#keyEtherscan").value.trim(), helius: $("#keyHelius").value.trim() });
+      ai.error = null;
+      setTimeout(() => { ai.run(); smart.tick(); }, 500);
       toast("Ключи сохранены");
       startPolling();
       break;
@@ -548,7 +585,17 @@ window.addEventListener("app:check", (e) => {
   runCheck();
 });
 
+window.addEventListener("ai:results", (e) => {
+  const list = e.detail || [];
+  if (!list.length || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  for (const r of list.slice(0, 3)) {
+    try { new Notification(`ИИ: кандидат ${ai.state.results[r.id]?.pair?.baseToken?.symbol || ""}`, { body: r.headline, tag: r.id }); } catch { /* ignore */ }
+  }
+});
+
 render();
 store.scheduleAutoRefresh();
 store.refresh();
 startPolling();
+ai.start();
+smart.start();

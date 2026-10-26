@@ -1,6 +1,6 @@
 // App state, persistence and data loading.
 import { CHAINS, chainById, P, analyzeEvm, analyzeSolana, assessRisk, lateEntry, DEFAULT_PLANS } from "./engine.js";
-import { dex, goplusSecurity } from "./api.js";
+import { dex, gecko, goplusSecurity } from "./api.js";
 
 const LS = "cryptoScanner.settings.v1";
 
@@ -36,6 +36,8 @@ export const store = {
   checking: new Set(),
 
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+  _afterRefresh: [],
+  onRefreshed(fn) { this._afterRefresh.push(fn); },
   emit() { for (const fn of listeners) fn(); },
 
   saveSettings() {
@@ -114,12 +116,39 @@ export const store = {
         const cur = best.get(k);
         if (!cur || P.liq(p) > P.liq(cur)) best.set(k, p);
       }
-      if (!best.size) {
-        this.error = failures[0] || "DexScreener не вернул данных.";
-      } else {
+      if (best.size) {
         this.pairs = [...best.values()];
         this.lastUpdated = new Date();
+        this.emit();
       }
+
+      // GeckoTerminal: trending pools on every chain, new pools on the main
+      // memecoin chains. Merged in as they arrive.
+      const jobs = [];
+      for (const c of chains) {
+        if (!c.gt) continue;
+        jobs.push([c, "trending"]);
+        if (c.gtNew) jobs.push([c, "new"]);
+      }
+      for (const [c, kind] of jobs) {
+        try {
+          const pools = await gecko.pools(c, kind);
+          for (const p of pools) {
+            const k = P.key(p);
+            const cur = best.get(k);
+            if (!cur) best.set(k, p);
+            else if (P.liq(p) > P.liq(cur)) best.set(k, { ...p, info: cur.info || p.info });
+          }
+          this.pairs = [...best.values()];
+          this.lastUpdated = new Date();
+          this.emit();
+        } catch (e) {
+          failures.push(e.message);
+        }
+      }
+      if (!best.size) this.error = failures[0] || "Источники рынка не вернули данных.";
+      this.lastRefreshDone = Date.now();
+      for (const fn of this._afterRefresh) { try { fn(); } catch { /* ignore */ } }
     } finally {
       this.loading = false;
       this.emit();

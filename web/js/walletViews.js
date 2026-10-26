@@ -4,6 +4,7 @@ import {
   WALLET_CHAINS, UNSUPPORTED_WALLET_CHAINS, keys, analyzeWallet, findBuyers,
   watchlist, feed, pollAll, shortAddr, holdText,
 } from "./wallets.js";
+import { smart } from "./smartmoney.js";
 
 const emit = () => window.dispatchEvent(new Event("app:update"));
 const openCheck = (chain, address) => window.dispatchEvent(new CustomEvent("app:check", { detail: { chain, address } }));
@@ -150,6 +151,34 @@ function resultsTable() {
       </tr>`).join("")}</tbody></table></div>`;
 }
 
+function leaderboard() {
+  const list = smart.list();
+  const st = smart.state;
+  const auto = smart.settings().auto;
+  let h = `<div class="lbhead">
+    <h3 class="h3">Рейтинг кошельков, найденных автоматически</h3>
+    <span class="fine">${smart.running ? `<span class="spinner sm"></span> ${esc(smart.status)}` : auto ? "Поиск идёт сам, пока сайт открыт: берёт выросшие токены и разбирает их ранних покупателей." : "Автопоиск выключен в настройках."}
+      Сегодня разобрано токенов: Solana ${st.used?.solana || 0}/6, EVM ${st.used?.evm || 0}/24.</span>
+  </div>`;
+  if (smart.error) h += `<p class="notice bad">${icon("bad", "bad")}<span>${esc(smart.error)}</span></p>`;
+  if (!list.length) {
+    return h + empty("Рейтинг пока пуст", "Как только в рынке появятся токены, которые сильно выросли, приложение само найдёт их ранних покупателей и посчитает им винрейт. Первые результаты обычно появляются через 5–15 минут после открытия сайта. Ручной поиск по токену или кошельку доступен в строке выше.");
+  }
+  h += `<div class="tablescroll"><table class="grid">
+    <thead><tr><th>Кошелёк</th><th>Оценка</th><th class="r">Винрейт</th><th class="r">PnL</th><th class="r c-24">Ранних входов</th><th class="c-vol">В каких токенах</th><th></th></tr></thead>
+    <tbody>${list.slice(0, 100).map((w) => `
+      <tr data-action="lb-open" data-chain="${esc(w.chain)}" data-wallet="${esc(w.wallet)}" tabindex="0">
+        <td>${chainBadge(w.chain)} <span class="mono">${esc(shortAddr(w.wallet))}</span>${w.isBot ? ' <span class="pill muted">бот</span>' : ""}</td>
+        <td><span class="pill ${GRADE[w.grade].cls}">${GRADE[w.grade].t}</span></td>
+        <td class="r num">${w.tokens ? fmt.share(w.winRate) : "—"} <span class="muted">${w.wins}/${w.tokens}</span></td>
+        <td class="r">${usdSigned(w.pnl)}</td>
+        <td class="r num c-24">${w.hits.length}</td>
+        <td class="c-vol muted">${esc(w.hits.map((x) => x.symbol).slice(0, 4).join(", "))}</td>
+        <td class="r">${watchButton(w.chain, w.wallet, true)}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+  return h;
+}
+
 function detailView(a) {
   const c = WALLET_CHAINS[a.chain];
   const metric = (l, v) => `<div class="metric"><span>${l}</span><b class="num">${v}</b></div>`;
@@ -199,7 +228,7 @@ function detailView(a) {
 export const walletViews = {
   wallets: {
     title: "Сильные кошельки",
-    subtitle: () => "Винрейт и прибыль по реальной истории сделок",
+    subtitle: () => `Найдено автоматически: ${smart.list().length} · сильных: ${smart.smartList().length}`,
     mount(el) {
       el.innerHTML = `
         <form class="checkbar" id="wForm">
@@ -242,10 +271,7 @@ export const walletViews = {
         if (ws.error) html += `<p class="notice bad">${icon("bad", "bad")}<span>${esc(ws.error)}</span></p>`;
         if (ws.note) html += `<p class="lead pad">${esc(ws.note)}</p>`;
         if (ws.results.length) html += resultsTable();
-        else if (!ws.running && !ws.error) {
-          html += empty("Как найти сильные кошельки",
-            "Вставь адрес токена, который хорошо вырос: приложение найдёт его первых покупателей и посчитает по каждому реальный винрейт и прибыль на истории сделок. Сильные кошельки можно добавить в копи-трейдинг. Удобно запускать из карточки токена в скринере. Режим «По кошельку» разбирает один адрес.");
-        }
+        else if (!ws.running && !ws.error) html += leaderboard();
       }
       body.innerHTML = html;
       const sc = body.querySelector(".tablescroll");
@@ -384,7 +410,8 @@ document.addEventListener("click", async (e) => {
       if (r) { ws.detail = r; emit(); $("#view")?.scrollTo(0, 0); }
       break;
     }
-    case "wallet-back": ws.detail = null; emit(); break;
+    case "wallet-back": ws.detail = null; if (ws.mode === "wallet") ws.results = []; emit(); break;
+    case "lb-open": startWalletScan(chain, wallet); break;
     case "watch-toggle":
       e.stopPropagation();
       if (watchlist.has(chain, wallet)) { watchlist.remove(chain, wallet); toast("Убрано из отслеживания"); }

@@ -1,16 +1,16 @@
 // Market data model, scam analysis, risk tiers, strategies, formatting.
 
 export const CHAINS = [
-  { id: "solana", name: "Solana", short: "SOL", goplus: "solana", explorer: "https://solscan.io/token/", seed: "SOL" },
-  { id: "ethereum", name: "Ethereum", short: "ETH", goplus: "1", explorer: "https://etherscan.io/token/", seed: "WETH" },
-  { id: "bsc", name: "BNB Chain", short: "BNB", goplus: "56", explorer: "https://bscscan.com/token/", seed: "WBNB" },
-  { id: "base", name: "Base", short: "BASE", goplus: "8453", explorer: "https://basescan.org/token/", seed: "base WETH" },
-  { id: "arbitrum", name: "Arbitrum", short: "ARB", goplus: "42161", explorer: "https://arbiscan.io/token/", seed: "ARB" },
-  { id: "polygon", name: "Polygon", short: "POL", goplus: "137", explorer: "https://polygonscan.com/token/", seed: "WPOL" },
-  { id: "avalanche", name: "Avalanche", short: "AVAX", goplus: "43114", explorer: "https://snowscan.xyz/token/", seed: "WAVAX" },
-  { id: "optimism", name: "Optimism", short: "OP", goplus: "10", explorer: "https://optimistic.etherscan.io/token/", seed: "OP" },
-  { id: "sonic", name: "Sonic", short: "S", goplus: "146", explorer: "https://sonicscan.org/token/", seed: "wS" },
-  { id: "hyperevm", name: "HyperEVM", short: "HYPE", goplus: "999", explorer: "https://hyperevmscan.io/token/", seed: "WHYPE" },
+  { id: "solana", gt: "solana", gtNew: true, name: "Solana", short: "SOL", goplus: "solana", explorer: "https://solscan.io/token/", seed: "SOL" },
+  { id: "ethereum", gt: "eth", gtNew: true, name: "Ethereum", short: "ETH", goplus: "1", explorer: "https://etherscan.io/token/", seed: "WETH" },
+  { id: "bsc", gt: "bsc", gtNew: true, name: "BNB Chain", short: "BNB", goplus: "56", explorer: "https://bscscan.com/token/", seed: "WBNB" },
+  { id: "base", gt: "base", gtNew: true, name: "Base", short: "BASE", goplus: "8453", explorer: "https://basescan.org/token/", seed: "base WETH" },
+  { id: "arbitrum", gt: "arbitrum", gtNew: false, name: "Arbitrum", short: "ARB", goplus: "42161", explorer: "https://arbiscan.io/token/", seed: "ARB" },
+  { id: "polygon", gt: "polygon_pos", gtNew: false, name: "Polygon", short: "POL", goplus: "137", explorer: "https://polygonscan.com/token/", seed: "WPOL" },
+  { id: "avalanche", gt: "avax", gtNew: false, name: "Avalanche", short: "AVAX", goplus: "43114", explorer: "https://snowscan.xyz/token/", seed: "WAVAX" },
+  { id: "optimism", gt: "optimism", gtNew: false, name: "Optimism", short: "OP", goplus: "10", explorer: "https://optimistic.etherscan.io/token/", seed: "OP" },
+  { id: "sonic", gt: "sonic", gtNew: false, name: "Sonic", short: "S", goplus: "146", explorer: "https://sonicscan.org/token/", seed: "wS" },
+  { id: "hyperevm", gt: "hyperevm", gtNew: false, name: "HyperEVM", short: "HYPE", goplus: "999", explorer: "https://hyperevmscan.io/token/", seed: "WHYPE" },
 ];
 
 export const chainById = (id) => CHAINS.find((c) => c.id === id);
