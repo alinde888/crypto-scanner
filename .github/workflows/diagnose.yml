@@ -8,36 +8,80 @@ permissions:
   contents: write
 
 jobs:
-  probe:
+  web:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Screenshots
         run: |
           mkdir -p diag
-          probe() { echo "== $1" >> diag/cors.txt; curl -sS -m 20 -D - -o diag/body.tmp -H "Origin: https://alinde888.github.io" -H "Accept: application/json" "$1" | grep -i -E "^HTTP|access-control-allow-origin|x-ratelimit" >> diag/cors.txt; }
-          probe "https://api.geckoterminal.com/api/v2/networks/solana/trending_pools?page=1"
-          cp diag/body.tmp diag/gt_trending.json
-          probe "https://api.geckoterminal.com/api/v2/networks/eth/new_pools?page=1"
-          cp diag/body.tmp diag/gt_new.json
-          probe "https://api.geckoterminal.com/api/v2/networks?page=1"
-          cp diag/body.tmp diag/gt_networks.json
-          probe "https://api.geckoterminal.com/api/v2/networks/solana/pools?page=1&sort=h24_volume_usd_desc"
-          echo "== anthropic preflight" >> diag/cors.txt
-          curl -sS -m 20 -X OPTIONS -D - -o /dev/null -H "Origin: https://alinde888.github.io" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type,x-api-key,anthropic-version,anthropic-dangerous-direct-browser-access" https://api.anthropic.com/v1/messages | grep -i -E "^HTTP|access-control" >> diag/cors.txt
-          echo "== anthropic post" >> diag/cors.txt
-          curl -sS -m 20 -D - -o diag/body.tmp -X POST -H "Origin: https://alinde888.github.io" -H "content-type: application/json" -H "x-api-key: x" -H "anthropic-version: 2023-06-01" -H "anthropic-dangerous-direct-browser-access: true" -d '{"model":"claude-haiku-5-5","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}' https://api.anthropic.com/v1/messages | grep -i -E "^HTTP|access-control-allow-origin" >> diag/cors.txt
-          head -c 300 diag/body.tmp >> diag/cors.txt
-          rm -f diag/body.tmp
-          python3 - <<'PY'
-          import json
-          d=json.load(open("diag/gt_networks.json"))
-          print(json.dumps([[x["id"],x["attributes"]["name"]] for x in d["data"]])[:3000], file=open("diag/nets.txt","w"))
-          t=json.load(open("diag/gt_trending.json"))
-          print(json.dumps(t["data"][0], indent=1)[:4000], file=open("diag/gt_sample.txt","w"))
-          PY
+          (cd web && python3 -m http.server 8080 > /dev/null 2>&1 &)
+          npm i -s playwright@1.47.2 > /dev/null 2>&1
+          npx -y playwright@1.47.2 install --with-deps chromium > /dev/null 2>&1
+          cat > shot.mjs <<'JS'
+          import { chromium } from "playwright";
+          import fs from "fs";
+          const b = await chromium.launch();
+          const log = [];
+          // 1. no keys
+          {
+            const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+            const pg = await ctx.newPage();
+            pg.on("pageerror", (e) => log.push(`pageerror: ${e.message}`));
+            pg.on("console", (m) => { if (m.type() === "error") log.push(`console: ${m.text()}`); });
+            await pg.goto("http://localhost:8080/");
+            await pg.waitForTimeout(70000);
+            await pg.screenshot({ path: "diag/1-picks-nokey.png" });
+            log.push("subtitle screener: " + await pg.evaluate(() => { location.hash = "#screener"; return new Promise((r) => setTimeout(() => r(document.querySelector("#subtitle").textContent), 1500)); }));
+            const chips = await pg.$$eval(".chip", (els) => els.map((e) => e.textContent.trim().replace(/\s+/g, " ")));
+            log.push("chips: " + chips.join(" | "));
+            await pg.screenshot({ path: "diag/2-screener.png" });
+            await ctx.close();
+          }
+          // 2. mocked AI
+          {
+            const ctx = await b.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: "dark" });
+            await ctx.addInitScript(() => localStorage.setItem("cryptoScanner.keys.v1", JSON.stringify({ anthropic: "test" })));
+            let calls = 0;
+            await ctx.route("https://api.anthropic.com/v1/messages", async (route) => {
+              calls++;
+              const req = JSON.parse(route.request().postData());
+              const text = req.messages[0].content;
+              const data = JSON.parse(text.slice(text.indexOf("{")));
+              log.push(`ai request: model=${req.model} tokens=${data.tokens.length} chars=${text.length}`);
+              const verdicts = ["candidate", "watch", "avoid"];
+              const analyses = data.tokens.map((t, i) => ({ id: t.id, verdict: verdicts[i % 3], confidence: 70 - i * 5, risk: "high",
+                headline: `Тест ${t.symbol}: покупатели преобладают, объём растёт`, thesis: "Тестовый тезис для проверки интерфейса.",
+                positives: ["Покупок больше продаж", "Ликвидность достаточная"], risks: ["Молодая пара", "Высокая волатильность"],
+                timing: "Вход допустим на откате", invalidation: "Цена ниже уровня старта" }));
+              await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
+                body: JSON.stringify({ content: [{ type: "tool_use", name: "report", input: { analyses } }], usage: { input_tokens: 5000, output_tokens: 1200 } }) });
+            });
+            const pg = await ctx.newPage();
+            pg.on("pageerror", (e) => log.push(`pageerror2: ${e.message}`));
+            await pg.goto("http://localhost:8080/");
+            await pg.waitForTimeout(80000);
+            log.push("ai calls: " + calls);
+            await pg.screenshot({ path: "diag/3-picks-ai.png" });
+            const btn = await pg.$("[data-action='pick-open']");
+            if (btn) { await btn.click(); await pg.waitForTimeout(3000); await pg.screenshot({ path: "diag/4-pick-detail.png" }); }
+            await pg.goto("http://localhost:8080/#settings"); await pg.waitForTimeout(1500);
+            await pg.screenshot({ path: "diag/5-settings.png", fullPage: true });
+            const ph = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, colorScheme: "dark" });
+            await ctx.close();
+          }
+          await b.close();
+          fs.writeFileSync("diag/console.txt", log.join("\n"));
+          JS
+          node shot.mjs || echo "shot failed" >> diag/console.txt
       - name: Store results
         run: |
           cd diag && git init -q && git checkout -q -b diag-results
           git config user.name "diag-bot" && git config user.email "diag@example.com"
-          mkdir d && mv *.* d/ && mv d diag && git add diag && git commit -q -m "probe ${{ github.run_number }}"
+          mkdir d && mv *.* d/ && mv d diag && git add diag && git commit -q -m "web ${{ github.run_number }}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" diag-results
