@@ -36,8 +36,8 @@ jobs:
             const data = JSON.parse(text.slice(text.indexOf("{")));
             log.push(`ai request tokens=${data.tokens.length}: ${data.tokens.map((t) => t.symbol).join(",")}`);
             const risks = ["high", "medium", "low"];
-            const analyses = data.tokens.map((t, i) => ({ id: t.id, verdict: i < 3 ? "candidate" : i < 5 ? "watch" : "avoid", confidence: i === 2 ? 45 : 80 - i * 3, risk: risks[i % 3],
-              headline: `Тест ${t.symbol}`, thesis: "Тестовый тезис.", positives: ["a"], risks: ["b"], timing: "сейчас", invalidation: "ниже старта" }));
+            const analyses = JSON.stringify(data.tokens.map((t, i) => ({ id: t.id, verdict: i < 3 ? "Candidate" : i < 5 ? "watch" : "avoid", confidence: String(80 - i * 3), risk: risks[i % 3],
+              thesis: "Тестовый тезис.", positives: JSON.stringify(["a", "b"]), risks: "- one\n- two" })));
             await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
               body: JSON.stringify({ content: [{ type: "tool_use", name: "report", input: { analyses } }], usage: { input_tokens: 5000, output_tokens: 1200 } }) });
           });
