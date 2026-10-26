@@ -28,30 +28,26 @@ jobs:
           import fs from "fs";
           const b = await chromium.launch();
           const log = [];
-          const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
-          await ctx.addInitScript(() => {
-            const W = (chain, wallet, o) => ({ chain, wallet, grade: "weak", winRate: 0.6, wins: 6, tokens: 10, pnl: 1500, roi: 0.4, topShare: 0.3, isBot: false, medianHold: 3600e3, flags: [], hits: [{ token: "x", symbol: "PEPE", ts: 1 }], analyzedAt: Date.now(), ...o });
-            const wallets = {
-              "solana:a1": W("solana", "A1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-              "solana:a2": W("solana", "A2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", { tokens: 6, wins: 3, winRate: 0.5, pnl: 300, roi: 0.12 }),
-              "solana:a3": W("solana", "A3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", { tokens: 1, wins: 1, winRate: 1, pnl: 900, roi: 3 }),
-              "ethereum:0xb1": W("ethereum", "0xb100000000000000000000000000000000000001", { pnl: -500, roi: -0.2 }),
-              "ethereum:0xb2": W("ethereum", "0xb200000000000000000000000000000000000002", { tokens: 12, wins: 8, winRate: 0.66, pnl: 4200, roi: 0.8 }),
-            };
-            localStorage.setItem("cryptoScanner.smart.v1", JSON.stringify({ scanned: {}, wallets, day: null, used: { solana: 2, evm: 1 }, log: [] }));
-            localStorage.setItem("cryptoScanner.settings.v1", JSON.stringify({ smartAuto: false }));
+          const ctx = await b.newContext({ viewport: { width: 1440, height: 1000 } });
+          await ctx.addInitScript(() => localStorage.setItem("cryptoScanner.keys.v1", JSON.stringify({ anthropic: "test" })));
+          await ctx.route("https://api.anthropic.com/v1/messages", async (route) => {
+            const req = JSON.parse(route.request().postData());
+            const text = req.messages[0].content;
+            const data = JSON.parse(text.slice(text.indexOf("{")));
+            log.push(`ai request tokens=${data.tokens.length}: ${data.tokens.map((t) => t.symbol).join(",")}`);
+            const risks = ["high", "medium", "low"];
+            const analyses = data.tokens.map((t, i) => ({ id: t.id, verdict: i < 3 ? "candidate" : i < 5 ? "watch" : "avoid", confidence: i === 2 ? 45 : 80 - i * 3, risk: risks[i % 3],
+              headline: `Тест ${t.symbol}`, thesis: "Тестовый тезис.", positives: ["a"], risks: ["b"], timing: "сейчас", invalidation: "ниже старта" }));
+            await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" },
+              body: JSON.stringify({ content: [{ type: "tool_use", name: "report", input: { analyses } }], usage: { input_tokens: 5000, output_tokens: 1200 } }) });
           });
           const pg = await ctx.newPage();
           pg.on("pageerror", (e) => log.push(`pageerror: ${e.message}`));
-          await pg.goto("http://localhost:8080/#wallets");
-          await pg.waitForTimeout(4000);
-          await pg.screenshot({ path: "diag/1-strong.png" });
-          await pg.click("[data-action='lb-view'][data-value='all']"); await pg.waitForTimeout(800);
-          await pg.screenshot({ path: "diag/2-all.png" });
-          await pg.click("[data-action='lb-chain'][data-value='ethereum']"); await pg.waitForTimeout(800);
-          await pg.screenshot({ path: "diag/3-eth.png" });
+          await pg.goto("http://localhost:8080/");
+          await pg.waitForTimeout(90000);
+          await pg.screenshot({ path: "diag/1-picks.png", fullPage: true });
           await b.close();
-          fs.writeFileSync("diag/console.txt", log.join("\n") || "no errors");
+          fs.writeFileSync("diag/console.txt", log.join("\n") || "no log");
           JS
           node shot.mjs || echo "shot failed" >> diag/console.txt
       - name: Store results
