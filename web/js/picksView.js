@@ -5,6 +5,17 @@ import { ai, VERDICT_UI, MODELS, fmtTokens } from "./ai.js";
 import { smart } from "./smartmoney.js";
 import { keys, watchlist } from "./wallets.js";
 
+const MIN_CONFIDENCE = 60;
+const CANDIDATE_TTL = 3 * 3600e3;
+
+// A pick is stale once the market has moved against it since the analysis.
+function stale(r) {
+  const p = ai.live(r);
+  const now = P.price(p);
+  if (!now || !r.priceAt) return false;
+  return now / r.priceAt - 1 < -0.25;
+}
+
 const ago = (ts) => {
   const m = (Date.now() - ts) / 60000;
   if (m < 1) return "только что";
@@ -88,9 +99,11 @@ export const picksView = {
     const k = keys.get();
     const profile = cfg.profile;
     const inProfile = (r) => profile === "all" || r.risk === profile;
+    const fresh = (r) => Date.now() - r.at < CANDIDATE_TTL && !stale(r);
     const all = ai.results().filter(inProfile);
-    const by = (v) => all.filter((r) => r.verdict === v).sort((a, b) => b.confidence - a.confidence || b.at - a.at);
-    const cand = by("candidate"), watch = by("watch"), avoid = by("avoid");
+    const cand = all.filter((r) => r.verdict === "candidate" && r.confidence >= MIN_CONFIDENCE && fresh(r))
+      .sort((a, b) => b.confidence - a.confidence || b.at - a.at);
+    const rejected = all.filter((r) => !cand.includes(r)).sort((a, b) => b.at - a.at);
     ai.resetDay();
 
     const seg = [["all", "Любой риск"], ["high", "Высокий"], ["medium", "Средний"], ["low", "Низкий"]];
@@ -130,10 +143,23 @@ export const picksView = {
             <td class="r num c-liq">${fmt.usd(P.liq(p))}</td><td class="r num c-age">${fmt.age(P.ageHours(p))}</td></tr>`).join("")}</tbody></table></div>`;
       }
     } else {
-      html += `<h3 class="sect">Кандидаты на покупку <span class="muted num">${cand.length}</span></h3>`;
-      html += cand.length ? `<div class="pickgrid">${cand.map(card).join("")}</div>` : `<p class="muted pad0">Сейчас ИИ не видит сильных сетапов под этот профиль риска. Это нормально: лучше пропустить слабые идеи.</p>`;
-      if (watch.length) html += `<h3 class="sect">Наблюдать <span class="muted num">${watch.length}</span></h3><div class="pickgrid">${watch.map(card).join("")}</div>`;
-      if (avoid.length) html += `<details class="avoid"><summary><h3 class="sect">Избегать <span class="muted num">${avoid.length}</span></h3></summary><div class="pickgrid">${avoid.map(card).join("")}</div></details>`;
+      html += `<p class="muted pad0">Разобрано за последние сутки: <b class="num">${all.length}</b> · прошли отбор: <b class="num">${cand.length}</b>. В подборке только сделки, которые ИИ счёл сильными (уверенность от ${MIN_CONFIDENCE}), не старше ${CANDIDATE_TTL / 3600e3} ч.</p>`;
+      if (!cand.length) {
+        html += empty("Сейчас сильных сделок нет", "ИИ разобрал рынок, но ни один токен не прошёл отбор под этот профиль риска. Это нормально: пустая подборка лучше слабых идей. Новые токены разбираются каждые несколько минут.");
+      }
+      for (const tier of ["high", "medium", "low"]) {
+        const list = cand.filter((r) => r.risk === tier);
+        if (!list.length) continue;
+        html += `<h3 class="sect"><i class="dot ${TIERS[tier].cls}"></i>${TIERS[tier].title} <span class="muted num">${list.length}</span></h3><div class="pickgrid">${list.map(card).join("")}</div>`;
+      }
+      if (rejected.length) {
+        html += `<details class="avoid"><summary><h3 class="sect">Отсеяно ИИ <span class="muted num">${rejected.length}</span></h3></summary>
+          <ul class="rejected">${rejected.map((r) => {
+            const p = ai.live(r);
+            const why = r.verdict === "candidate" ? (r.confidence < MIN_CONFIDENCE ? "низкая уверенность" : "устарело") : VERDICT_UI[r.verdict].t.toLowerCase();
+            return `<li data-action="pick-open" data-value="${esc(P.key(p))}" tabindex="0">${tokenIcon(p, 22)}<b>${esc(P.symbol(p))}</b>${chainBadge(p.chainId)}<span class="pill ${VERDICT_UI[r.verdict].cls}">${why}</span><span class="muted">${esc(r.headline)}</span></li>`;
+          }).join("")}</ul></details>`;
+      }
     }
     html += `<p class="fine pad0">Анализ ИИ основан на данных рынка и контрактов на момент разбора и не предсказывает цену. Уровни посчитаны по твоим правилам для категории риска, которую назначил ИИ.</p>`;
 

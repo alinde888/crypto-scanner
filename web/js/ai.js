@@ -26,8 +26,10 @@ function load() {
 
 const SYSTEM = `You are an on-chain crypto analyst inside a DEX token screener. A trader reviews your output and decides himself whether to buy; he accepts the risk. Your job is to rank setups honestly using only the data given.
 
+Judge every token within its own risk class. A brand-new memecoin is a high-risk trade and can still be a "candidate" when the setup is strong for a speculative entry; an established token is a low-risk trade and is a "candidate" when its trend and liquidity are healthy. Assign "risk" by the class of the trade (high: young or small-cap, thin liquidity, memecoins; medium: a few days to weeks old with decent liquidity; low: established, deep liquidity).
+
 For every token decide:
-- "candidate": the setup is favourable right now for the trader's risk profile: healthy early or continuing momentum (buyers outnumber sellers, volume accelerating, unique buyers growing), liquidity adequate for the market cap, contract clean, holders not too concentrated, and ideally smart wallets buying. Be selective: usually no more than a quarter of tokens qualify.
+- "candidate": a potentially good trade right now within its risk class: healthy early or continuing momentum (buyers outnumber sellers, volume accelerating, unique buyers growing), liquidity adequate for the market cap, contract clean, holders not too concentrated, ideally smart wallets buying. The trader only sees candidates, so use it only when you would genuinely put this in front of him, and give it confidence 60 or higher. Be selective: usually no more than a quarter of tokens qualify, and zero is fine.
 - "watch": interesting but something is missing (entry is late, momentum unclear, contract not verified yet, liquidity thin). Say what would make it a candidate.
 - "avoid": scam signs, dangerous contract permissions, momentum already exhausted after a big pump, heavy selling, liquidity that can be pulled, extreme holder concentration.
 
@@ -104,6 +106,19 @@ function describe(p, smartBuys) {
   };
 }
 
+// Hard gates: obvious non-trades never reach the AI.
+function passesGates(p, smartBuys) {
+  const sb = smartBuys.get(`${p.chainId}:${p.baseToken.address.toLowerCase()}`);
+  if (P.liq(p) < Math.max(15000, store.settings.minLiquidity)) return false;
+  if (store.security.get(P.key(p))?.verdict === "danger") return false;
+  if (lateEntry(p, { maxPump: 300, skipFading: true }).length && !sb) return false;
+  const b = P.buys(p, "h1"), sl = P.sells(p, "h1");
+  if (b + sl >= 20 && b / (b + sl) < 0.5 && !sb) return false;
+  const cap = P.cap(p);
+  if (cap && P.liq(p) / cap < 0.03) return false;      // liquidity too thin to exit
+  return true;
+}
+
 // Heuristic pre-ranking so the AI spends tokens on the most promising setups.
 function preScore(p, profile, smartBuys) {
   const strategies = STRATEGIES.filter((s) => profile === "all" || s.risk === profile);
@@ -164,7 +179,7 @@ export const ai = {
     const now = Date.now();
     const base = store.pairs.filter((p) => {
       if (!store.settings.chains.includes(p.chainId)) return false;
-      if (P.liq(p) < store.settings.minLiquidity) return false;
+      if (!passesGates(p, smartBuys)) return false;
       if (store.security.get(P.key(p))?.verdict === "danger") return false;
       const prev = this.state.results[P.key(p)];
       if (prev && now - prev.at < (TTL[prev.verdict] || TTL.watch)) return false;
@@ -172,7 +187,7 @@ export const ai = {
     });
     return base
       .map((p) => ({ p, s: preScore(p, profile, smartBuys) }))
-      .filter((x) => x.s > -Infinity)
+      .filter((x) => x.s >= 3)
       .sort((a, b) => b.s - a.s)
       .map((x) => x.p);
   },

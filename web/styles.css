@@ -455,3 +455,7 @@ details.avoid[open] > summary { margin-bottom: 12px; }
   .toast { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
 }
 .lbfilters { gap: 10px; margin-top: 6px; align-items: center; }
+.rejected { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.rejected li { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; background: var(--bg-elev); cursor: pointer; min-width: 0; }
+.rejected li > span.muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.sect .dot { width: 9px; height: 9px; align-self: center; }
