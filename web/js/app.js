@@ -259,7 +259,14 @@ const views = {
         </button>`).join("");
 
       const s = currentStrategy();
-      $("#summary", el).innerHTML = `<p>${s.summary}</p><div class="rules">${s.rules.map((r) => `<span>${r}</span>`).join("")}</div>`;
+      const st = store.settings;
+      const extra = [];
+      if (s.antiPump && st.maxPump > 0) extra.push(`Рост за 6–24 ч ≤ +${st.maxPump}%`);
+      if (s.antiPump && st.skipFading) extra.push("Импульс не угасает");
+      const late = store.hiddenAsLate(s).length;
+      $("#summary", el).innerHTML = `<p>${s.summary}</p>
+        <div class="rules">${s.rules.map((r) => `<span>${r}</span>`).join("")}${extra.map((r) => `<span class="rule-guard">${r}</span>`).join("")}</div>
+        ${late ? `<p class="fine">Скрыто как поздний вход: ${late}. Порог меняется в настройках.</p>` : ""}`;
 
       const wrap = $("#tablewrap", el);
       const rows = screenerRows();
@@ -391,9 +398,13 @@ const views = {
               <select data-setting="minLiquidity">${liqOpts.map((v) => `<option value="${v}" ${s.minLiquidity === v ? "selected" : ""}>${v ? fmt.usd(v) : "Без ограничения"}</option>`).join("")}</select></label>
             <label class="field"><span>Автообновление</span>
               <select data-setting="autoRefreshMin">${refOpts.map((v) => `<option value="${v}" ${s.autoRefreshMin === v ? "selected" : ""}>${v ? `Каждые ${v} мин` : "Выключено"}</option>`).join("")}</select></label>
+            <label class="field"><span>Не догонять памп: скрывать выросшие больше чем на</span>
+              <select data-setting="maxPump">${[0, 100, 200, 300, 500, 1000].map((v) => `<option value="${v}" ${s.maxPump === v ? "selected" : ""}>${v ? `+${v}%` : "Не скрывать"}</option>`).join("")}</select></label>
+            <label class="toggle"><span>Скрывать токены с угасающим импульсом</span>
+              <input type="checkbox" role="switch" data-setting="skipFading" ${s.skipFading ? "checked" : ""}></label>
             <label class="toggle"><span>Скрывать токены с опасным контрактом</span>
               <input type="checkbox" role="switch" data-setting="hideDangerous" ${s.hideDangerous ? "checked" : ""}></label>
-            <p class="fine">Чем ниже порог ликвидности, тем больше щитков в выдаче и тем выше риск, что ликвидность заберут.</p>
+            <p class="fine">Чем ниже порог ликвидности, тем больше щитков в выдаче и тем выше риск, что ликвидность заберут. Фильтры «памп» и «импульс» действуют на стратегии «Ранний вход» и «Всплеск объёма». Импульс считается угасающим, когда цена падает и за 5 минут, и за час, или когда за 5 минут продаж в полтора раза больше покупок.</p>
           </section>
           <section class="group"><h3>Данные</h3>
             <p class="fine">Рынок: DexScreener. Проверка контрактов: GoPlus Security. Настройки хранятся только в этом браузере. Приложение не подключается к кошельку и не проводит сделки.</p>
@@ -407,8 +418,8 @@ const views = {
           const set = new Set(s.chains);
           i.checked ? set.add(i.value) : set.delete(i.value);
           s.chains = CHAINS.map((c) => c.id).filter((id) => set.has(id));
-        } else if (k === "hideDangerous") {
-          s.hideDangerous = i.checked;
+        } else if (k === "hideDangerous" || k === "skipFading") {
+          s[k] = i.checked;
         } else {
           s[k] = Number(i.value);
         }

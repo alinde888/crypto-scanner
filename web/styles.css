@@ -167,6 +167,7 @@ body.has-inspector .app { grid-template-columns: 220px minmax(0, 1fr) 400px; }
 .chip.on .dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.7); }
 .summary p { margin: 0 0 8px; color: var(--fg-2); max-width: 75ch; }
 .rules { display: flex; flex-wrap: wrap; gap: 6px; }
+.rules span.rule-guard { border-style: dashed; }
 .rules span { font-size: 11.5px; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--fg-2); }
 
 .tablewrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }

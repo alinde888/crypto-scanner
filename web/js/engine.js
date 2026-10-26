@@ -246,6 +246,10 @@ export function assessRisk(p, sec) {
   if (cap > 0 && cap < 1e6) { score += 2; f.push("Капитализация ниже $1M"); }
   else if (cap > 0 && cap < 10e6) { score += 1; f.push("Капитализация ниже $10M"); }
 
+  const up = runUp(p);
+  if (up != null && up > 300) { score += 2; f.push(`Уже вырос на ${fmt.pct(up)}: поздний вход, высок риск разворота`); }
+  if (isFading(p)) { score += 1; f.push("Импульс угасает: цена снижается или продавцов больше"); }
+
   const ch = P.change(p, "h24");
   if (ch != null) {
     if (Math.abs(ch) > 50) { score += 2; f.push(`Движение цены за сутки ${fmt.pct(ch)}`); }
@@ -264,17 +268,41 @@ export function assessRisk(p, sec) {
   return { tier, factors: f, checked: !!sec };
 }
 
+// ---------- Late-entry ("don't chase the pump") filter ----------
+
+// Growth already behind the token: the larger of the 6 h and 24 h moves.
+export function runUp(p) {
+  const v = [P.change(p, "h6"), P.change(p, "h24")].filter((x) => x != null);
+  return v.length ? Math.max(...v) : null;
+}
+
+// Momentum is fading: price falls on both 5 min and 1 h, or sellers clearly
+// outnumber buyers in the last 5 minutes.
+export function isFading(p) {
+  const m5 = P.change(p, "m5"), h1 = P.change(p, "h1");
+  const b = P.buys(p, "m5"), sl = P.sells(p, "m5");
+  return (m5 != null && h1 != null && m5 < 0 && h1 < 0) || (sl >= 5 && sl > b * 1.5);
+}
+
+export function lateEntry(p, { maxPump, skipFading }) {
+  const reasons = [];
+  const up = runUp(p);
+  if (maxPump > 0 && up != null && up > maxPump) reasons.push(`уже вырос на ${fmt.pct(up)}`);
+  if (skipFading && isFading(p)) reasons.push("импульс угасает");
+  return reasons;
+}
+
 // ---------- Strategies ----------
 
 export const STRATEGIES = [
   {
-    id: "earlyPairs", title: "Ранний вход", risk: "high", icon: "sparkle",
+    id: "earlyPairs", title: "Ранний вход", risk: "high", icon: "sparkle", antiPump: true,
     summary: "Новые пары в первые сутки, где покупателей больше, чем продавцов. Самая высокая доля скамов, поэтому скам-проверка здесь обязательна.",
     rules: ["Возраст ≤ 24 ч", "Ликвидность ≥ $10K", "Покупок за 1 ч больше, чем продаж", "Объём за 1 ч ≥ $5K"],
     match: (p) => { const a = P.ageHours(p); return a != null && a <= 24 && P.liq(p) >= 10e3 && P.buys(p, "h1") > P.sells(p, "h1") && P.vol(p, "h1") >= 5e3; },
   },
   {
-    id: "volumeSpike", title: "Всплеск объёма", risk: "high", icon: "pulse",
+    id: "volumeSpike", title: "Всплеск объёма", risk: "high", icon: "pulse", antiPump: true,
     summary: "Токены, у которых объём за последний час в разы выше среднего и цена растёт. Ловит начало движения, но легко попасть на вершину.",
     rules: ["Объём 1 ч ≥ 2× среднего часа за сутки", "Цена 1 ч ≥ +3%", "Ликвидность ≥ $50K", "Возраст ≥ 6 ч"],
     match: (p) => { const a = P.ageHours(p); const avg = P.vol(p, "h24") / 24; return a != null && a >= 6 && P.liq(p) >= 50e3 && avg > 0 && P.vol(p, "h1") >= avg * 2 && (P.change(p, "h1") ?? 0) >= 3; },

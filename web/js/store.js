@@ -1,5 +1,5 @@
 // App state, persistence and data loading.
-import { CHAINS, chainById, P, analyzeEvm, analyzeSolana, assessRisk, DEFAULT_PLANS } from "./engine.js";
+import { CHAINS, chainById, P, analyzeEvm, analyzeSolana, assessRisk, lateEntry, DEFAULT_PLANS } from "./engine.js";
 import { dex, goplusSecurity } from "./api.js";
 
 const LS = "cryptoScanner.settings.v1";
@@ -9,6 +9,8 @@ function loadSettings() {
     chains: CHAINS.map((c) => c.id),
     minLiquidity: 10000,
     hideDangerous: true,
+    maxPump: 300,
+    skipFading: true,
     autoRefreshMin: 5,
     plans: structuredClone(DEFAULT_PLANS),
   };
@@ -43,7 +45,8 @@ export const store = {
 
   risk(p) { return assessRisk(p, this.security.get(P.key(p))); },
 
-  matches(strategy) {
+  // Pairs passing the base filters and the strategy conditions.
+  candidates(strategy) {
     const { chains, minLiquidity, hideDangerous } = this.settings;
     const on = new Set(chains);
     return this.pairs.filter((p) => {
@@ -52,6 +55,18 @@ export const store = {
       if (hideDangerous && this.security.get(P.key(p))?.verdict === "danger") return false;
       return strategy.match(p);
     });
+  },
+
+  // Candidates minus late entries for strategies that chase momentum.
+  matches(strategy) {
+    const list = this.candidates(strategy);
+    if (!strategy.antiPump) return list;
+    return list.filter((p) => !lateEntry(p, this.settings).length);
+  },
+
+  hiddenAsLate(strategy) {
+    if (!strategy.antiPump) return [];
+    return this.candidates(strategy).filter((p) => lateEntry(p, this.settings).length);
   },
 
   async refresh() {
