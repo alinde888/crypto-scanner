@@ -298,8 +298,8 @@ export const STRATEGIES = [
   {
     id: "earlyPairs", title: "Ранний вход", risk: "high", icon: "sparkle", antiPump: true,
     summary: "Новые пары в первые сутки, где покупателей больше, чем продавцов. Самая высокая доля скамов, поэтому скам-проверка здесь обязательна.",
-    rules: ["Возраст ≤ 24 ч", "Ликвидность ≥ $10K", "Покупок за 1 ч больше, чем продаж", "Объём за 1 ч ≥ $5K"],
-    match: (p) => { const a = P.ageHours(p); return a != null && a <= 24 && P.liq(p) >= 10e3 && P.buys(p, "h1") > P.sells(p, "h1") && P.vol(p, "h1") >= 5e3; },
+    rules: ["Возраст ≤ 24 ч", "Ликвидность ≥ $10K", "Покупок за 1 ч больше, чем продаж", "Объём за 1 ч ≥ $5K", "Цена 1 ч не ниже −20%"],
+    match: (p) => { const a = P.ageHours(p); return a != null && a <= 24 && P.liq(p) >= 10e3 && P.buys(p, "h1") > P.sells(p, "h1") && P.vol(p, "h1") >= 5e3 && (P.change(p, "h1") ?? 0) > -20; },
   },
   {
     id: "volumeSpike", title: "Всплеск объёма", risk: "high", icon: "pulse", antiPump: true,
