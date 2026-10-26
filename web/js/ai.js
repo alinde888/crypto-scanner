@@ -187,7 +187,7 @@ export const ai = {
     });
     return base
       .map((p) => ({ p, s: preScore(p, profile, smartBuys) }))
-      .filter((x) => x.s >= 3)
+      .filter((x) => x.s >= 2)
       .sort((a, b) => b.s - a.s)
       .map((x) => x.p);
   },
@@ -290,6 +290,11 @@ export const ai = {
 
   start() {
     store.onRefreshed(() => this.run());
+    // First pass as soon as the fast DexScreener data is in, without waiting
+    // for the slower GeckoTerminal sweep.
+    const first = setInterval(() => {
+      if (store.pairs.length) { clearInterval(first); setTimeout(() => this.run(), 3000); }
+    }, 2000);
     clearInterval(this.timer);
     this.timer = setInterval(() => this.run(), 6 * 60e3);
   },
