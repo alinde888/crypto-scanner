@@ -76,7 +76,7 @@ export async function goplusSecurity(chain, address) {
 // ---------- GeckoTerminal (public API, ~30 calls/min) ----------
 
 const GT = "https://api.geckoterminal.com/api/v2";
-const gtPacer = new Pacer(2200);
+const gtPacer = new Pacer(6500);   // public tier is stricter than documented
 const num = (v) => (v == null || v === "" ? null : Number(v));
 
 // Converts a GeckoTerminal pool into the DexScreener pair shape used everywhere.
@@ -116,7 +116,13 @@ export const gecko = {
   async pools(chain, kind) {
     await gtPacer.wait();
     const path = kind === "new" ? "new_pools" : "trending_pools";
-    const r = await getJSON(`${GT}/networks/${chain.gt}/${path}?include=base_token&page=1`);
+    let r;
+    try {
+      r = await getJSON(`${GT}/networks/${chain.gt}/${path}?include=base_token&page=1`);
+    } catch (e) {
+      gtPacer.next = Math.max(gtPacer.next, Date.now() + 30000);   // back off after a refusal
+      throw e;
+    }
     const tokens = new Map();
     for (const inc of r?.included || []) if (inc.type === "token") tokens.set(inc.id, inc.attributes || {});
     return (r?.data || []).map((p) => gtToPair(p, tokens, chain.id)).filter((p) => p.pairAddress && p.baseToken.address);

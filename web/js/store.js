@@ -4,6 +4,10 @@ import { dex, gecko, goplusSecurity } from "./api.js";
 
 const LS = "cryptoScanner.settings.v1";
 
+// Base assets and stablecoins are quote currencies, not trade ideas.
+const QUOTE_SYMBOLS = new Set(["SOL", "WSOL", "ETH", "WETH", "BNB", "WBNB", "USDC", "USDC.E", "USDT", "USDT0", "DAI", "USDE", "FDUSD", "USD1", "PYUSD", "USDS", "POL", "WPOL", "MATIC", "WMATIC", "AVAX", "WAVAX", "S", "WS", "HYPE", "WHYPE", "WBTC", "CBBTC", "STETH", "WSTETH", "JITOSOL", "MSOL"]);
+const isTradable = (p) => !QUOTE_SYMBOLS.has(String(p.baseToken?.symbol || "").toUpperCase());
+
 function loadSettings() {
   const defaults = {
     chains: CHAINS.map((c) => c.id),
@@ -111,6 +115,7 @@ export const store = {
         catch (e) { failures.push(e.message); }
       }
       const best = new Map();
+      collected = collected.filter(isTradable);
       for (const p of collected) {
         const k = P.key(p);
         const cur = best.get(k);
@@ -132,7 +137,7 @@ export const store = {
       }
       for (const [c, kind] of jobs) {
         try {
-          const pools = await gecko.pools(c, kind);
+          const pools = (await gecko.pools(c, kind)).filter(isTradable);
           for (const p of pools) {
             const k = P.key(p);
             const cur = best.get(k);
