@@ -28,15 +28,19 @@ const SYSTEM = `You are an on-chain crypto analyst inside a DEX token screener. 
 
 Judge every token within its own risk class. A brand-new memecoin is a high-risk trade and can still be a "candidate" when the setup is strong for a speculative entry; an established token is a low-risk trade and is a "candidate" when its trend and liquidity are healthy. Assign "risk" by the class of the trade (high: young or small-cap, thin liquidity, memecoins; medium: a few days to weeks old with decent liquidity; low: established, deep liquidity).
 
-For every token decide:
-- "candidate": a potentially good trade right now within its risk class: healthy early or continuing momentum (buyers outnumber sellers, volume accelerating, unique buyers growing), liquidity adequate for the market cap, contract clean, holders not too concentrated, ideally smart wallets buying. The trader only sees candidates, so use it only when you would genuinely put this in front of him, and give it confidence 60 or higher. Be selective: usually no more than a quarter of tokens qualify, and zero is fine.
-- "watch": interesting but something is missing (entry is late, momentum unclear, contract not verified yet, liquidity thin). Say what would make it a candidate.
-- "avoid": scam signs, dangerous contract permissions, momentum already exhausted after a big pump, heavy selling, liquidity that can be pulled, extreme holder concentration.
+These tokens already passed hard filters (liquidity, contract scan, no exhausted pump, buyers not outnumbered), so they are the best of the current market. Your job is to rank them and pick the tradeable ones, not to look for perfection: every DEX trade carries risk and the trader has chosen to take it.
+
+First give every token a "score" 0-100: the quality of the trade setup within its risk class (momentum health, buyer/seller balance, volume trend, liquidity vs market cap, contract, holder distribution, smart wallets).
+
+Then decide:
+- "candidate": among the best setups of this batch and without a disqualifying red flag. When the batch has anything tradeable, mark the best 1-3 tokens as candidates. Use zero only when every token has a disqualifying red flag.
+- "watch": decent but clearly weaker than the candidates, or one concrete thing is missing. Say what would make it a candidate.
+- "avoid": a disqualifying red flag: dangerous contract permissions, exhausted momentum with heavy selling, liquidity that can be pulled while holders are concentrated, signs of a rug or wash trading.
 
 Rules:
 - Treat a token that already rose several hundred percent as a late entry unless fresh volume and buyers clearly continue.
 - Fading momentum (falling 5m and 1h price, sellers outnumbering buyers) is a strong negative.
-- "confidence" (0-100) is how strong the evidence for your verdict is, not a probability of profit.
+- "confidence" (0-100) is how strong the evidence for your verdict is, not a probability of profit. A candidate normally has confidence 50 or higher.
 - Never promise returns. No hype words.
 - Write all text in Russian, concise, with concrete numbers from the data.`;
 
@@ -53,6 +57,7 @@ const TOOL = {
           properties: {
             id: { type: "string", description: "id of the token exactly as given" },
             verdict: { type: "string", enum: ["candidate", "watch", "avoid"] },
+            score: { type: "integer", minimum: 0, maximum: 100, description: "setup quality within its risk class" },
             confidence: { type: "integer", minimum: 0, maximum: 100 },
             risk: { type: "string", enum: ["high", "medium", "low"] },
             headline: { type: "string", description: "one line, up to 90 characters" },
@@ -62,7 +67,7 @@ const TOOL = {
             timing: { type: "string", description: "is entering now reasonable or better to wait, and for what" },
             invalidation: { type: "string", description: "what would show the idea is wrong" },
           },
-          required: ["id", "verdict", "confidence", "risk", "headline", "thesis", "positives", "risks", "timing", "invalidation"],
+          required: ["id", "score", "verdict", "confidence", "risk", "headline", "thesis", "positives", "risks", "timing", "invalidation"],
         },
       },
     },
@@ -200,7 +205,8 @@ export const ai = {
     if (!cfg.enabled && !manual) return;
     if (this.callsLeft() <= 0) { this.error = `Дневной лимит анализов (${cfg.dailyCalls}) исчерпан. Его можно поднять в настройках.`; this.save(); return; }
     const list = this.pending(cfg.profile).slice(0, BATCH);
-    if (!list.length) { if (manual) { this.status = "Новых подходящих токенов нет, все уже разобраны."; this.save(); } return; }
+    this.lastPending = list.length;
+    if (!list.length) { this.status = "Новых токенов, прошедших фильтр, пока нет. Проверю после следующего обновления рынка."; this.save(); return; }
 
     this.running = true;
     this.error = null;

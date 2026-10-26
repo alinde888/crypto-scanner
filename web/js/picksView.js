@@ -5,7 +5,7 @@ import { ai, VERDICT_UI, MODELS, fmtTokens } from "./ai.js";
 import { smart } from "./smartmoney.js";
 import { keys, watchlist } from "./wallets.js";
 
-const MIN_CONFIDENCE = 60;
+const MIN_CONFIDENCE = 50;
 const CANDIDATE_TTL = 3 * 3600e3;
 
 // A pick is stale once the market has moved against it since the analysis.
@@ -143,7 +143,10 @@ export const picksView = {
             <td class="r num c-liq">${fmt.usd(P.liq(p))}</td><td class="r num c-age">${fmt.age(P.ageHours(p))}</td></tr>`).join("")}</tbody></table></div>`;
       }
     } else {
-      html += `<p class="muted pad0">Разобрано за последние сутки: <b class="num">${all.length}</b> · прошли отбор: <b class="num">${cand.length}</b>. В подборке только сделки, которые ИИ счёл сильными (уверенность от ${MIN_CONFIDENCE}), не старше ${CANDIDATE_TTL / 3600e3} ч.</p>`;
+      const cnt = (v) => all.filter((r) => r.verdict === v).length;
+      const low = all.filter((r) => r.verdict === "candidate" && r.confidence < MIN_CONFIDENCE).length;
+      const old = all.filter((r) => r.verdict === "candidate" && r.confidence >= MIN_CONFIDENCE && !fresh(r)).length;
+      html += `<p class="muted pad0">За сутки ИИ разобрал <b class="num">${all.length}</b>: кандидатов <b class="num">${cnt("candidate")}</b>, наблюдать <b class="num">${cnt("watch")}</b>, избегать <b class="num">${cnt("avoid")}</b>.${low ? ` С низкой уверенностью: ${low}.` : ""}${old ? ` Устарели: ${old}.` : ""} В подборке кандидаты с уверенностью от ${MIN_CONFIDENCE} за последние ${CANDIDATE_TTL / 3600e3} ч.</p>`;
       if (!cand.length) {
         html += empty("Сейчас сильных сделок нет", "ИИ разобрал рынок, но ни один токен не прошёл отбор под этот профиль риска. Это нормально: пустая подборка лучше слабых идей. Новые токены разбираются каждые несколько минут.");
       }
