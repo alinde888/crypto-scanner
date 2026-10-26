@@ -8,58 +8,36 @@ permissions:
   contents: write
 
 jobs:
-  web:
+  probe:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Screenshots
+      - name: Probe
         run: |
           mkdir -p diag
-          (cd web && python3 -m http.server 8080 > /dev/null 2>&1 &)
-          npm i -s playwright@1.47.2 > /dev/null 2>&1
-          npx -y playwright@1.47.2 install --with-deps chromium > /dev/null 2>&1
-          cat > shot.mjs <<'JS'
-          import { chromium } from "playwright";
-          const b = await chromium.launch();
-          const log = [];
-          const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: "light" });
-          const pg = await ctx.newPage();
-          pg.on("console", (m) => { if (m.type() !== "log") log.push(`${m.type()}: ${m.text()}`); });
-          pg.on("pageerror", (e) => log.push(`pageerror: ${e.message}`));
-          await pg.goto("http://localhost:8080/");
-          await pg.waitForTimeout(40000);
-          await pg.screenshot({ path: "diag/1-screener.png" });
-          const row = await pg.$("tbody tr");
-          if (row) { await row.click(); await pg.waitForTimeout(6000); }
-          await pg.screenshot({ path: "diag/2-detail.png" });
-          const fb = await pg.$("[data-action='find-buyers']");
-          log.push("find-buyers button: " + !!fb);
-          if (fb) { await fb.click(); await pg.waitForTimeout(8000); }
-          await pg.screenshot({ path: "diag/3-wallets.png" });
-          await pg.goto("http://localhost:8080/#copy"); await pg.waitForTimeout(3000);
-          await pg.fill("#awAddr", "0x28C6c06298d514Db089934071355E5743bf21d60");
-          await pg.selectOption("#awChain", "ethereum");
-          await pg.click("#addWatch button"); await pg.waitForTimeout(5000);
-          await pg.screenshot({ path: "diag/4-copy.png" });
-          await pg.goto("http://localhost:8080/#settings"); await pg.waitForTimeout(2000);
-          await pg.screenshot({ path: "diag/5-settings.png" });
-          const ph = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, colorScheme: "dark" });
-          const pp = await ph.newPage();
-          pp.on("pageerror", (e) => log.push(`phone pageerror: ${e.message}`));
-          await pp.goto("http://localhost:8080/#copy"); await pp.waitForTimeout(4000);
-          await pp.screenshot({ path: "diag/6-phone-copy.png" });
-          await b.close();
-          (await import("fs")).writeFileSync("diag/console.txt", log.join("\n"));
-          JS
-          node shot.mjs || echo "shot failed" >> diag/console.txt
+          probe() { echo "== $1" >> diag/cors.txt; curl -sS -m 20 -D - -o diag/body.tmp -H "Origin: https://alinde888.github.io" -H "Accept: application/json" "$1" | grep -i -E "^HTTP|access-control-allow-origin|x-ratelimit" >> diag/cors.txt; }
+          probe "https://api.geckoterminal.com/api/v2/networks/solana/trending_pools?page=1"
+          cp diag/body.tmp diag/gt_trending.json
+          probe "https://api.geckoterminal.com/api/v2/networks/eth/new_pools?page=1"
+          cp diag/body.tmp diag/gt_new.json
+          probe "https://api.geckoterminal.com/api/v2/networks?page=1"
+          cp diag/body.tmp diag/gt_networks.json
+          probe "https://api.geckoterminal.com/api/v2/networks/solana/pools?page=1&sort=h24_volume_usd_desc"
+          echo "== anthropic preflight" >> diag/cors.txt
+          curl -sS -m 20 -X OPTIONS -D - -o /dev/null -H "Origin: https://alinde888.github.io" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type,x-api-key,anthropic-version,anthropic-dangerous-direct-browser-access" https://api.anthropic.com/v1/messages | grep -i -E "^HTTP|access-control" >> diag/cors.txt
+          echo "== anthropic post" >> diag/cors.txt
+          curl -sS -m 20 -D - -o diag/body.tmp -X POST -H "Origin: https://alinde888.github.io" -H "content-type: application/json" -H "x-api-key: x" -H "anthropic-version: 2023-06-01" -H "anthropic-dangerous-direct-browser-access: true" -d '{"model":"claude-haiku-5-5","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}' https://api.anthropic.com/v1/messages | grep -i -E "^HTTP|access-control-allow-origin" >> diag/cors.txt
+          head -c 300 diag/body.tmp >> diag/cors.txt
+          rm -f diag/body.tmp
+          python3 - <<'PY'
+          import json
+          d=json.load(open("diag/gt_networks.json"))
+          print(json.dumps([[x["id"],x["attributes"]["name"]] for x in d["data"]])[:3000], file=open("diag/nets.txt","w"))
+          t=json.load(open("diag/gt_trending.json"))
+          print(json.dumps(t["data"][0], indent=1)[:4000], file=open("diag/gt_sample.txt","w"))
+          PY
       - name: Store results
         run: |
           cd diag && git init -q && git checkout -q -b diag-results
           git config user.name "diag-bot" && git config user.email "diag@example.com"
-          mkdir d && mv *.* d/ && mv d diag && git add diag && git commit -q -m "web ${{ github.run_number }}"
+          mkdir d && mv *.* d/ && mv d diag && git add diag && git commit -q -m "probe ${{ github.run_number }}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" diag-results
