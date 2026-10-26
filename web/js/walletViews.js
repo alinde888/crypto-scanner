@@ -170,7 +170,7 @@ function leaderboard() {
     <h3 class="h3">Рейтинг кошельков, найденных автоматически</h3>
     <span class="fine">${smart.running ? `<span class="spinner sm"></span> ${esc(smart.status)}` : auto ? "Поиск идёт сам, пока сайт открыт: по очереди в каждой сети берёт выросшие токены и разбирает их ранних покупателей." : "Автопоиск выключен в настройках."}
       Сегодня разобрано токенов: Solana ${st.used?.solana || 0}/6, EVM-сети ${st.used?.evm || 0}/24.</span>
-    <span class="fine">«Сильный»: от ${MIN_TOKENS.strong} токенов в истории, общий плюс, ROI от +10%, прибыльных сделок не меньше 55%, и больше 60% прибыли не приходится на одну сделку. «Перспективный»: тот же знак, но история от ${MIN_TOKENS.medium} токенов. Боты и убыточные кошельки в рейтинг не попадают.</span>
+    <span class="fine">«Сильный»: от ${MIN_TOKENS.strong} токенов в истории, общий плюс, ROI от +10%, прибыльных сделок не меньше 55%, и больше 60% прибыли не приходится на одну сделку. «Перспективный»: тот же знак, но история от ${MIN_TOKENS.medium} токенов. Боты и убыточные кошельки видны только в режиме «Все проанализированные».</span>
     <div class="row wrap lbfilters">
       <div class="segmented" role="tablist" aria-label="Какие кошельки показывать">${views.map(([v, t]) => `<button role="tab" aria-selected="${ws.lbView === v}" data-action="lb-view" data-value="${v}">${t}</button>`).join("")}</div>
       <div class="chips">
