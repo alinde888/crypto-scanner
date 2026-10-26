@@ -113,6 +113,7 @@ export const picksView = {
     }
     if (ai.error) html += `<p class="notice bad">${icon("bad", "bad")}<span>${esc(ai.error)}</span></p>`;
     if (smart.error) html += `<p class="notice bad">${icon("bad", "bad")}<span>Поиск кошельков: ${esc(smart.error)}</span></p>`;
+    if (smart.notice) html += `<p class="notice">${icon("info")}<span>Поиск кошельков: ${esc(smart.notice)}</span></p>`;
 
     if (!store.pairs.length) {
       html += '<div class="empty"><span class="spinner"></span><p>Загружаю рынок…</p></div>';

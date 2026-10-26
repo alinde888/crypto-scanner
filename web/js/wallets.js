@@ -114,16 +114,43 @@ class Pacer {
   }
 }
 const etherscanPacer = new Pacer(350);   // free tier: 3-5 calls per second
-const heliusPacer = new Pacer(150);
+const heliusPacer = new Pacer(650);      // Enhanced Transactions: 2 req/s on the free plan
+const heliusRpcPacer = new Pacer(150);   // RPC: 10 req/s on the free plan
 
-async function fetchJSON(url, init) {
-  let res;
-  try { res = await fetch(url, init); }
-  catch { throw new Error(`Нет связи с ${new URL(url).host}.`); }
-  if (res.status === 401 || res.status === 403) throw new Error("Ключ API не подходит. Проверь его в Настройках → API-ключи.");
-  if (res.status === 429) throw new Error("Лимит запросов API исчерпан, подожди минуту.");
-  if (!res.ok) throw new Error(`${new URL(url).host} ответил ошибкой ${res.status}.`);
-  return res.json();
+export class RateLimitError extends Error {}
+
+const providerName = (url) => {
+  const h = new URL(url).host;
+  if (h.includes("helius")) return "Helius";
+  if (h.includes("etherscan")) return "Etherscan";
+  return h;
+};
+
+// Retries rate-limit refusals with growing pauses before giving up.
+async function fetchJSON(url, init, pacer) {
+  const name = providerName(url);
+  const waits = [2000, 5000, 12000];
+  for (let attempt = 0; ; attempt++) {
+    if (pacer) await pacer.wait();
+    let res;
+    try { res = await fetch(url, init); }
+    catch {
+      // A refused request can also surface as a network error (no CORS headers on 429).
+      if (attempt < waits.length) { await new Promise((r) => setTimeout(r, waits[attempt])); continue; }
+      throw new Error(`Нет связи с ${name}.`);
+    }
+    if (res.status === 429) {
+      if (attempt < waits.length) {
+        const ra = Number(res.headers.get("retry-after"));
+        await new Promise((r) => setTimeout(r, ra > 0 ? ra * 1000 : waits[attempt]));
+        continue;
+      }
+      throw new RateLimitError(`${name}: лимит запросов, продолжу автоматически через пару минут.`);
+    }
+    if (res.status === 401 || res.status === 403) throw new Error(`Ключ ${name} не подходит. Проверь его в Настройках → API-ключи.`);
+    if (!res.ok) throw new Error(`${name} ответил ошибкой ${res.status}.`);
+    return res.json();
+  }
 }
 
 async function etherscan(chain, params) {
@@ -131,8 +158,7 @@ async function etherscan(chain, params) {
   const c = WALLET_CHAINS[chain];
   const q = new URLSearchParams({ chainid: String(c.chainid), ...params, apikey: key });
   for (let attempt = 0; attempt < 3; attempt++) {
-    await etherscanPacer.wait();
-    const r = await fetchJSON(`https://api.etherscan.io/v2/api?${q}`);
+    const r = await fetchJSON(`https://api.etherscan.io/v2/api?${q}`, undefined, etherscanPacer);
     if (r.status === "1" && Array.isArray(r.result)) return r.result;
     const msg = typeof r.result === "string" ? r.result : r.message || "";
     if (/no transactions found|no records found/i.test(msg) || /no transactions found/i.test(r.message || "")) return [];
@@ -140,26 +166,24 @@ async function etherscan(chain, params) {
     if (/invalid api key|missing/i.test(msg)) throw new Error("Ключ Etherscan не подходит. Проверь его в Настройках → API-ключи.");
     throw new Error(`Etherscan: ${msg || "неизвестная ошибка"}`);
   }
-  throw new Error("Etherscan: лимит запросов, попробуй через минуту.");
+  throw new RateLimitError("Etherscan: лимит запросов, продолжу автоматически через пару минут.");
 }
 
 async function heliusSwaps(address, { limit = 100, before } = {}) {
   const key = requireKey("solana");
-  await heliusPacer.wait();
   const q = new URLSearchParams({ "api-key": key, type: "SWAP", limit: String(limit) });
   if (before) q.set("before", before);
-  const r = await fetchJSON(`https://api-mainnet.helius-rpc.com/v0/addresses/${address}/transactions?${q}`);
+  const r = await fetchJSON(`https://api-mainnet.helius-rpc.com/v0/addresses/${address}/transactions?${q}`, undefined, heliusPacer);
   return Array.isArray(r) ? r : [];
 }
 
 async function heliusLatestSignature(address) {
   const key = requireKey("solana");
-  await heliusPacer.wait();
   const r = await fetchJSON(`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getSignaturesForAddress", params: [address, { limit: 1 }] }),
-  });
+  }, heliusRpcPacer);
   return r?.result?.[0]?.signature || null;
 }
 

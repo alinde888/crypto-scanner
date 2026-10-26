@@ -92,7 +92,7 @@ export async function startTokenScan(chain, token) {
         ws.results.push({ ...a, entryTs: b.ts });
       } catch (e) {
         ws.results.push({ chain, wallet: b.wallet, error: e.message, entryTs: b.ts });
-        if (/ключ|Ключ|Лимит/.test(e.message)) { ws.error = e.message; break; }
+        if (/Ключ|лимит запросов/.test(e.message)) { ws.error = e.message; break; }
       }
       ws.progress.done++;
       sortResults();
@@ -368,7 +368,7 @@ async function pollNow() {
   emit();
   try {
     const errs = new Set();
-    const added = await pollAll((w, e) => errs.add(`${shortAddr(w.wallet)}: ${e.message}`));
+    const added = await pollAll((w, e) => { if (!/лимит запросов/.test(e.message)) errs.add(`${shortAddr(w.wallet)}: ${e.message}`); });
     copyState.errors = [...errs].slice(0, 3);
     copyState.lastPoll = new Date();
     const buys = added.filter((a) => a.side === "buy");

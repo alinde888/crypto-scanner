@@ -4,7 +4,7 @@
 
 import { P, chainById } from "./engine.js";
 import { store } from "./store.js";
-import { WALLET_CHAINS, keys, analyzeWallet, findBuyers, watchlist, feed, startOfDay } from "./wallets.js";
+import { WALLET_CHAINS, keys, analyzeWallet, findBuyers, watchlist, feed, startOfDay, RateLimitError } from "./wallets.js";
 
 const LS = "cryptoScanner.smart.v1";
 const BUDGET = { solana: 6, evm: 24 };          // token scans per day
@@ -103,7 +103,7 @@ export const smart = {
           hits: [...(cur?.hits || []).filter((h) => h.token !== key), hit], analyzedAt: Date.now(),
         };
       } catch (e) {
-        if (/ключ|Ключ|Лимит/.test(e.message)) throw e;
+        if (e instanceof RateLimitError || /Ключ/.test(e.message)) throw e;
       }
     }
     this.state.log = [{ ts: Date.now(), token: key, symbol: P.symbol(p), chain: p.chainId, buyers: buyers.length }, ...this.state.log].slice(0, 30);
@@ -135,6 +135,8 @@ export const smart = {
 
   async tick() {
     if (this.running || !this.settings().auto) return;
+    if (this.pausedUntil && Date.now() < this.pausedUntil) return;
+    this.notice = null;
     const k = keys.get();
     if (!k.etherscan && !k.helius) return;
     const pick = this.winners().find((p) => this.budgetLeft(WALLET_CHAINS[p.chainId].kind === "solana" ? "solana" : "evm") > 0);
@@ -144,7 +146,16 @@ export const smart = {
     try {
       await this.scanToken(pick);
     } catch (e) {
-      this.error = e.message;
+      if (e instanceof RateLimitError) {
+        // Put the token back in the queue and refund the daily budget; the next tick retries.
+        delete this.state.scanned[P.key(pick)];
+        const kind = WALLET_CHAINS[pick.chainId].kind === "solana" ? "solana" : "evm";
+        this.state.used[kind] = Math.max(0, (this.state.used[kind] || 1) - 1);
+        this.pausedUntil = Date.now() + 3 * 60e3;
+        this.notice = "Сервис данных попросил паузу, поиск продолжится через 3 минуты.";
+      } else {
+        this.error = e.message;
+      }
     } finally {
       this.running = false;
       this.status = "";
